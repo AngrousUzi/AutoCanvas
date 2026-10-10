@@ -257,8 +257,6 @@ const assignmentDocument = computed(() =>
       /><el-button @click="files.refetch()">刷新产物</el-button>
     </div>
     <div class="library-intro">
-      <span class="eyebrow">YOUR LEARNING LIBRARY</span>
-      <h2>课堂的每个片段，都有迹可循。</h2>
       <p>
         {{ groups.filter((g) => !g.sample).length }} 个课次 ·
         {{ groups.reduce((n, g) => n + slideFiles(g).length, 0) }} 张课堂画面
@@ -266,15 +264,11 @@ const assignmentDocument = computed(() =>
     </div>
     <div class="library-grid">
       <button
-        v-for="(id, i) in courseIds"
+        v-for="id in courseIds"
         :key="id"
         class="library-card"
         @click="chooseCourse(id)"
       >
-        <div class="library-cover" :class="'cover-' + (i % 4)">
-          <span>{{ courseName(id).slice(0, 1) }}</span
-          ><small>COURSE COLLECTION</small><b>↗</b>
-        </div>
         <div class="library-card-body">
           <h3>{{ courseName(id) }}</h3>
           <p>
@@ -290,16 +284,14 @@ const assignmentDocument = computed(() =>
             >
           </p>
           <div class="collection-features">
-            <span
-              >▧
+            <span>
               {{
                 groups
                   .filter((g) => g.courseId === id)
                   .reduce((n, g) => n + slideFiles(g).length, 0)
               }}
               张画面</span
-            ><span
-              >≋
+            ><span>
               {{
                 groups.filter(
                   (g) =>
@@ -369,14 +361,11 @@ const assignmentDocument = computed(() =>
           :class="{ selected: section === 'assignments' }"
           @click="section = 'assignments'"
         >
-          <span>▤ 作业与附件</span><small>{{ courseAssignments.length }}</small>
+          <span>作业与附件</span><small>{{ courseAssignments.length }}</small>
         </button>
       </div>
       <section class="library-content panel">
         <div class="artifact-heading">
-          <span class="eyebrow">{{
-            section === "assignments" ? "ASSIGNMENTS" : "CLASSROOM ARCHIVE"
-          }}</span>
           <h2>
             {{
               section === "assignments"

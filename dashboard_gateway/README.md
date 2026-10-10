@@ -2,7 +2,7 @@
 
 整个站点的入口网关：未登录只提供独立密码页，Vue 页面、JS/CSS、课程 API、Homework API、文件及 SSE 均要求有效访问会话。学校 jAccount 登录与此密码互相独立。
 
-配置在项目根目录 `dashboard.yml`（已忽略，不要提交到仓库）。`password` 为访问密码，至少 12 字符；安装时已生成随机密码。编辑 YAML 后重启网关即可更改密码，同时使旧会话失效。会话保存在内存，默认 12 小时，退出会撤销会话并断开该会话的活动流。Cookie 为 HttpOnly、SameSite=Strict；HTTPS 代理请求设置 Secure。错误密码限速不信任访客自行提供的 IP 头。
+配置在项目根目录 `dashboard.yml`（已忽略，不要提交到仓库）。`password` 为访问密码，至少 12 字符；请从 `dashboard.example.yml` 复制配置并设置自己的随机密码。编辑 YAML 后重启网关即可更改密码，同时使旧会话失效。会话保存在内存，默认 12 小时，退出会撤销会话并断开该会话的活动流。Cookie 为 HttpOnly、SameSite=Strict；HTTPS 代理请求设置 Secure。错误密码限速不信任访客自行提供的 IP 头。
 
 ```sh
 cd webui

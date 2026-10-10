@@ -12,6 +12,7 @@ from aiohttp import web
 from .config import Settings
 from .runner import Runner
 from .store import Store
+from .models import list_models
 
 
 
@@ -34,6 +35,8 @@ def register(app, config_path):
     state_path = settings.state
     store = Store(state_path / 'state.sqlite3')
     runner = Runner(settings, store, None, standalone=True)
+    model_cache = {}
+    model_lock = asyncio.Lock()
     native_paths = {}
     last_scan = 0
     codex_home = Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex'))).expanduser()
@@ -114,14 +117,21 @@ def register(app, config_path):
             config_path.write_text(yaml.safe_dump(values, allow_unicode=True, sort_keys=False))
             settings.workspace = target.resolve()
             last_scan = 0
-        models = []
-        try:
-            data = json.loads((codex_home / 'models_cache.json').read_text())
-            models = [m['slug'] for m in data.get('models', []) if m.get('slug') and m.get('visibility', 'list') == 'list']
-        except (OSError, ValueError, TypeError):
-            pass
-        return web.json_response({'workspace': str(settings.workspace), 'models': models,
-                                  'default_model': settings.codex_model})
+            model_cache.clear()
+        return web.json_response({'workspace': str(settings.workspace), 'default_model': settings.codex_model})
+
+    async def models(request):
+        async with model_lock:
+            if request.method == 'POST' or time.time()-model_cache.get('updated_at',0)>300:
+                try:
+                    names=await list_models(settings.codex, settings.workspace)
+                except (OSError, ValueError, KeyError) as exc:
+                    # Do not silently serve an obsolete list after a failed refresh.
+                    model_cache.clear()
+                    reason=str(exc) if isinstance(exc,ValueError) else '无法查询 Codex，请检查 CLI 路径和配置'
+                    return web.json_response({'error': reason},status=502)
+                model_cache.update(models=names,updated_at=time.time(),source='codex model/list')
+            return web.json_response(model_cache)
 
     async def sessions(request):
         if request.method == 'GET':
@@ -207,6 +217,7 @@ def register(app, config_path):
 
     for method, path, handler in [
         ('GET','/config',configuration), ('PATCH','/config',configuration),
+        ('GET','/models',models), ('POST','/models/refresh',models),
         ('GET','/sessions',sessions), ('POST','/sessions',sessions),
         ('PATCH','/sessions/{id}',update), ('GET','/sessions/{id}/turns',turns),
         ('POST','/sessions/{id}/turns',turns), ('GET','/sessions/{id}/events',events),

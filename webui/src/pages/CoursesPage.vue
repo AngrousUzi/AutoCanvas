@@ -30,7 +30,12 @@ const search = ref(""),
 const now = ref(Date.now());
 const timer = setInterval(() => (now.value = Date.now()), 30000);
 onUnmounted(() => clearInterval(timer));
-const all = computed(() => queueLessons(lectures.value, runs.value, now.value));
+const queue = computed(() =>
+  queueLessons(lectures.value, runs.value, now.value),
+);
+const all = computed(() =>
+  queue.value.filter((item) => item.state !== "running"),
+);
 const filtered = computed(() =>
   all.value.filter(
     (item) =>
@@ -49,7 +54,7 @@ const groups = computed(() =>
   })),
 );
 const activeCount = computed(
-  () => all.value.filter((i) => i.state === "running").length,
+  () => queue.value.filter((i) => i.state === "running").length,
 );
 const failedCount = computed(
   () => runs.value.filter((r) => r.status === "failed").length,
@@ -135,6 +140,7 @@ function openRules(id: string) {
         }}
       </p>
     </div>
+    <RouterLink v-if="activeCount" to="/running">查看执行中课堂 →</RouterLink>
     <el-button
       :loading="busy"
       @click="action('/api/automation', { paused: !paused })"
@@ -146,7 +152,6 @@ function openRules(id: string) {
       <button
         v-for="[key, label] in [
           ['all', '全部待办'],
-          ['running', '执行中'],
           ['pending', '队列中'],
           ['upcoming', '即将开始'],
           ['ready', '待安排'],

@@ -24,8 +24,10 @@ import App from "./App.vue";
 import "./style.css";
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior: (_to, _from, savedPosition) => savedPosition || { top: 0 },
   routes: [
     { path: "/", component: () => import("./pages/OverviewPage.vue") },
+    { path: "/running", component: () => import("./pages/RunningPage.vue") },
     { path: "/courses", component: () => import("./pages/CoursesPage.vue") },
     {
       path: "/executions",

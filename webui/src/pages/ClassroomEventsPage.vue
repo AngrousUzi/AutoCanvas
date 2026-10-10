@@ -267,7 +267,7 @@ async function copy(text: string) {
       >
     </el-table>
     <p class="muted">
-      结果不确定时不会自动重发。需要定位或现场验证时，请在交我办完成。关闭后不再派发新请求。
+      结果不确定时不会自动重发。先尝试扫码签到；接口确认成功后，定位提示仅作提醒。学校未确认成功时请人工核对。关闭后不再派发新请求。
     </p>
   </section>
   <div class="notice-strip">

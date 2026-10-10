@@ -34,6 +34,22 @@ class Service:
     def request_sync(self, course_id='*', *, automatic=False):
         return self.store.enqueue('sync', course_id, force=True, options={'automatic': automatic})
 
+    def request_assignments(self, course_id='*', *, automatic=False, due_only=False):
+        if course_id != '*' and self.store.get('courses', course_id) is None:
+            raise KeyError(course_id)
+        courses = [c for c in self.store.list('courses')
+                   if (course_id == '*' and c.get('active')) or c['id'] == course_id]
+        now = time.time()
+        ids = []
+        for course in courses:
+            key = 'assignments:' + course['id']
+            last = self.store.get('sync', key, {}).get('at', 0)
+            if due_only and now-last < self.settings.assignment_interval:
+                continue
+            ids.append(self.store.enqueue('assignments', course['id'], force=True, options={'automatic': automatic}))
+            self.store.put('sync', key, {'course_id': course['id'], 'kind': 'assignments', 'at': now})
+        return ids
+
     def enqueue_processing(self, course_id, lecture_id, kind, options=None, force=False):
         lecture = self.store.get('lectures', lecture_key(course_id, 'live' if kind == 'live' else 'vod', lecture_id))
         if lecture is None:
@@ -142,7 +158,7 @@ class Service:
             except Exception as error:
                 failed.append(course['id'])
                 self.store.put('sync', course['id'], {'course_id': course['id'], 'at': time.time(), 'status': 'failed', 'error': type(error).__name__})
-            self.store.enqueue('assignments', course['id'], force=True, options={'automatic': automatic})
+            self.request_assignments(course['id'], automatic=automatic, due_only=automatic)
         if failed:
             raise RuntimeError('Video synchronization failed for some courses; see sync status')
 
@@ -235,6 +251,7 @@ class Service:
     async def tick(self):
         if self.store.get('control', 'automation', {}).get('paused', False):
             return
+        self.request_assignments(automatic=True, due_only=True)
         active = {c['id'] for c in self.store.list('courses') if c.get('active')}
         now = time.time()
         last = self.store.get('sync', 'scheduled', {}).get('at', 0)

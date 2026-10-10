@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/vue-query";
 import { ElMessage } from "element-plus";
 import { api } from "../api";
 import type { Lecture } from "../workspace";
-const props = defineProps<{ lecture: Lecture }>();
+const props = defineProps<{ lecture: Lecture; eager?: boolean }>();
 const element = ref<HTMLElement>();
-const visible = ref(false);
+const visible = ref(!!props.eager);
 let observer: IntersectionObserver | undefined;
 onMounted(() => {
   observer = new IntersectionObserver((entries) => {
@@ -60,6 +60,7 @@ async function copy(url: string) {
 }
 </script>
 <template>
+  <slot :links="links" :refresh="streams.refetch" />
   <section ref="element" class="lecture-streams" aria-label="课次视频流">
     <div class="stream-heading">
       <b>视频流 · {{ lecture.kind === "live" ? "直播" : "回放" }}</b>
@@ -114,9 +115,9 @@ async function copy(url: string) {
   min-width: 0;
   margin: 18px 0;
   padding: 14px 16px;
-  border: 1px solid #dfe7df;
-  border-radius: 12px;
-  background: #f8faf7;
+  border: 1px solid var(--ochrelune-border);
+  border-radius: var(--ochrelune-radius-panel);
+  background: var(--ochrelune-surface-subtle);
 }
 .stream-heading {
   display: flex;
@@ -137,7 +138,7 @@ async function copy(url: string) {
 }
 .stream-label small {
   display: block;
-  color: #74877c;
+  color: var(--ochrelune-text-secondary);
   font-size: 11px;
 }
 .stream-row a {
@@ -156,7 +157,7 @@ async function copy(url: string) {
   margin-bottom: 0;
 }
 .stream-error {
-  color: #a94332;
+  color: var(--ochrelune-danger);
   font-size: 13px;
 }
 @media (max-width: 600px) {

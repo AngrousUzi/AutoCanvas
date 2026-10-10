@@ -113,11 +113,14 @@ def install(app, service):
             raise
 
     async def sync_assignments(request):
-        body = await request.json()
-        course = str(body['course_id'])
-        if not store.get('courses', course):
+        body = await request.json() if request.can_read_body else {}
+        course = str(body.get('course_id', '*'))
+        if course != '*' and not store.get('courses', course):
             raise web.HTTPNotFound()
-        return web.json_response({'execution_id': store.enqueue('assignments', course, force=True)}, status=202)
+        ids = service.request_assignments(course)
+        result = {'execution_ids': ids}
+        if course != '*' and ids:result['execution_id'] = ids[0]
+        return web.json_response(result, status=202)
 
     async def local(request):
         body = await request.json()

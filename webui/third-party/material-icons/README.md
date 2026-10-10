@@ -13,3 +13,5 @@ Outlined 24px icons, Apache-2.0 (see LICENSE). SVG paths are embedded in src/com
 - settings: src/action/settings/materialiconsoutlined/24px.svg
 - lock: src/action/lock/materialiconsoutlined/24px.svg
 - logs: src/action/subject/materialiconsoutlined/24px.svg
+
+- videocam: src/av/videocam/materialiconsoutlined/24px.svg

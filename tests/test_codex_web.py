@@ -114,3 +114,20 @@ class CodexWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(message({'type':'response_item','payload':{'type':'message','role':'user','content':[{'type':'input_text','text':'# AGENTS.md instructions for /workspace'},{'type':'input_text','text':'<environment_context>metadata'}]}}))
         row = message({'type':'response_item','payload':{'type':'message','role':'user','content':[{'type':'input_text','text':'My actual request'}]}})
         self.assertEqual(row, {'role':'user','text':'My actual request'})
+
+    async def test_model_catalog_queries_cli_and_refresh_does_not_reuse_old_list(self):
+        from unittest.mock import AsyncMock
+        with patch('homework_service.web.list_models',new_callable=AsyncMock) as query:
+            query.return_value=['current-model']
+            first=await self.request('/models',method='GET')
+            self.assertEqual(first['models'],['current-model'])
+            await self.request('/models',method='GET')
+            self.assertEqual(query.await_count,1)
+            query.return_value=['new-model']
+            updated=await self.request('/models/refresh',{})
+            self.assertEqual(updated['models'],['new-model'])
+            self.assertEqual(query.await_count,2)
+            query.side_effect=ValueError('模型查询超时')
+            await self.request('/models/refresh',{},expected=502)
+            await self.request('/models',method='GET',expected=502)
+            self.assertEqual(query.await_count,4)

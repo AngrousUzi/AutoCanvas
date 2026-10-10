@@ -36,3 +36,6 @@ dashboard.yml
 .claude/
 AGENTS.md
 CLAUDE.md
+
+# Local generated artifacts
+artifacts/

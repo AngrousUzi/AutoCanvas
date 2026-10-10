@@ -10,6 +10,7 @@ from .types import AuthenticationRequired
 
 HOST = 'https://mlearning.sjtu.edu.cn'
 MAX_AGE = 2.0  # local receive-to-dispatch budget; upstream stream delay is separate
+SIGN_DELAY = 3.0  # wait from first detection, then select a fresh frame
 
 
 def parse_code(text, course_id):
@@ -79,23 +80,29 @@ class MobileLogin:
             return {'status': 'needs_login', 'message': '移动课堂登录已失效'}
         if any(word in message.lower() for word in ('过期', '不存在', 'expired')):
             return {'status': 'expired', 'message': '二维码已过期或失效，等待新码'}
-        if any(word in message.lower() for word in ('定位', '位置', '范围', 'gps', 'location')):
-            return {'status': 'needs_action', 'message': '学校要求定位或现场验证，请在交我办完成'}
+        location_notice = any(word in message.lower() for word in ('定位', '位置', '范围', 'gps', 'location'))
         if code_value != '200':
+            if location_notice:
+                return {'status': 'needs_action', 'message': '已尝试扫码签到，但学校未确认成功并提示定位，请核对签到记录', 'location_reminder': True}
             return {'status': 'rejected', 'message': '学校拒绝签到（响应码 '+code_value+'），等待新码或人工检查'}
         state = str(body.get('status', '')) if isinstance(body, dict) else ''
         if state in ('EXPIRED', 'UNKNOWN'):
             return {'status': 'expired', 'message': '二维码已过期或无效'}
         if state and state not in ('NORMAL', 'EXISTED'):
             return {'status': 'needs_action', 'message': '学校返回额外签到状态，请检查签到记录'}
-        return {'status': 'succeeded', 'message': '学校签到接口已确认成功；如有定位要求仍需在交我办完成'}
+        result = {'status': 'succeeded', 'message': '学校签到接口已确认成功'}
+        if location_notice:
+            result.update(location_reminder=True, message='学校签到接口已确认成功；另有定位提示，可在交我办核对定位要求')
+        return result
 
 
 class LatestAttendance:
     """One decoded mailbox per live view. Never queue codes behind authentication/I/O."""
-    def __init__(self, client, store, enabled):
+    def __init__(self, client, store, enabled, *, sign_delay=SIGN_DELAY):
         self.client, self.store, self.enabled = client, store, enabled
         self.latest = {}
+        self.first_seen = {}
+        self.sign_delay = sign_delay
         self.revision = 0
         self.changed = asyncio.Event()
         self.lock = asyncio.Lock()
@@ -105,6 +112,8 @@ class LatestAttendance:
         self.revision += 1
         codes = [parse_code(row['content'], course) for row in rows]
         codes = [c for c in codes if c]
+        for code in codes:
+            self.first_seen.setdefault(code['key'], time.monotonic())
         self.latest[view] = [dict(c, lecture_id=lecture, received=received, image=image,
                                   revision=self.revision) for c in codes]
         self.changed.set()
@@ -135,10 +144,16 @@ class LatestAttendance:
                 self.auth_status = 'needs_login' if isinstance(error, AuthenticationRequired) else 'unavailable'
                 await asyncio.sleep(3)
                 return
-            # Authentication can take seconds. Pick again, never reuse the previous code.
-            code = self.fresh()
-            if not code:
-                return
+            # Authentication and the intentional delay can outlive a QR token.
+            # Re-select after every wait, including when another rollcall appears.
+            while True:
+                code = self.fresh()
+                if not code:
+                    return
+                remaining = self.first_seen[code['key']] + self.sign_delay - time.monotonic()
+                if remaining <= 0:
+                    break
+                await asyncio.sleep(remaining)
             record = {k: code[k] for k in ('course_id', 'lecture_id', 'history', 'fingerprint', 'image')}
             record.update(id=code['key'], status='submitting', at=time.time(),
                           age_ms=round((time.monotonic()-code['received'])*1000),

@@ -60,7 +60,7 @@ function openOutputs() {
     <template v-if="run">
       <div class="section-head">
         <div>
-          <p class="eyebrow">{{ courseName(run.course_id) }}</p>
+          <p class="muted">{{ courseName(run.course_id) }}</p>
           <h3>
             {{
               run.lecture_id

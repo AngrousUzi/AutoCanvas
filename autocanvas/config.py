@@ -17,6 +17,7 @@ class Settings:
     auto_live: bool = True
     course_interval: int = 604800
     sync_interval: int = 3600
+    assignment_interval: int = 1800
     schedule_interval: int = 60
     live_lead_seconds: int = 600
     live_queue_chunks: int = 100
@@ -31,7 +32,7 @@ class Settings:
         for key in ('auto_asr', 'auto_slides', 'auto_live'):
             if type(getattr(self, key)) is not bool:
                 raise ValueError(f'{key}: 必须为布尔值')
-        for key in ('port', 'course_interval', 'sync_interval', 'schedule_interval', 'live_lead_seconds', 'live_queue_chunks', 'keyword_debounce'):
+        for key in ('port', 'course_interval', 'sync_interval', 'assignment_interval', 'schedule_interval', 'live_lead_seconds', 'live_queue_chunks', 'keyword_debounce'):
             value = getattr(self, key)
             minimum = 0 if key in ('live_lead_seconds', 'keyword_debounce') else 1
             if type(value) is not int or not minimum <= value <= (65535 if key == 'port' else 31536000):

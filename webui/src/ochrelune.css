@@ -1,0 +1,321 @@
+/* Ochrelune Design: shared palette and component states.
+   Theme: Ochrelune design */
+:root {
+  color-scheme: light;
+  --ochrelune-canvas: #faf9f7;
+  --ochrelune-surface: #fdfcfb;
+  --ochrelune-surface-subtle: #f3f1ee;
+  --ochrelune-surface-muted: #efede9;
+  --ochrelune-surface-strong: #e9e6e1;
+  --ochrelune-text: #302b28;
+  --ochrelune-text-secondary: #5b514b;
+  --ochrelune-text-muted: #70655d;
+  --ochrelune-border: #e6e2dc;
+  --ochrelune-control-border: #918278;
+  --ochrelune-accent: #9f5038;
+  --ochrelune-accent-hover: #91462f;
+  --ochrelune-accent-soft: #f3e5dc;
+  --ochrelune-action: #302b28;
+  --ochrelune-action-hover: #4b413b;
+  --ochrelune-on-action: #faf9f7;
+  --ochrelune-focus: #9f5038;
+  --ochrelune-success: #42644e;
+  --ochrelune-success-bg: #f1f2ee;
+  --ochrelune-warning: #815b26;
+  --ochrelune-warning-bg: #f5eddf;
+  --ochrelune-danger: #a13e32;
+  --ochrelune-danger-bg: #f8e9e5;
+  --ochrelune-info: #625b55;
+  --ochrelune-info-bg: #efede9;
+  --ochrelune-selection: #ead0c1;
+  --ochrelune-chart-1: #a85940;
+  --ochrelune-chart-2: #526f81;
+  --ochrelune-chart-3: #806b35;
+  --ochrelune-chart-4: #45413d;
+  --ochrelune-chart-5: #756c62;
+  --ochrelune-chart-6: #706078;
+  --ochrelune-grid: #e9e4da;
+  --ochrelune-zero-line: #aaa092;
+  --ochrelune-radius-control: 0.375rem;
+  --ochrelune-radius-panel: 0.5rem;
+  --ochrelune-radius-dialog: 0.75rem;
+  --ochrelune-shadow-overlay: 0 8px 24px rgb(43 41 37 / 12%);
+  --ochrelune-backdrop: rgb(43 41 37 / 40%);
+  --ochrelune-duration: 150ms;
+  --ochrelune-easing: ease-out;
+  --ochrelune-accent-decoration: #d97757;
+  --ochrelune-on-dark-muted: #d5c9c0;
+  --ochrelune-dark-border: #70655d;
+  --ochrelune-video: #211c19;
+}
+
+/* Root variables also reach Element Plus dialogs and menus teleported to body. */
+:root {
+  --el-bg-color: var(--ochrelune-surface);
+  --el-bg-color-page: var(--ochrelune-canvas);
+  --el-bg-color-overlay: var(--ochrelune-surface);
+  --el-fill-color: var(--ochrelune-surface-muted);
+  --el-fill-color-light: var(--ochrelune-surface-subtle);
+  --el-fill-color-lighter: var(--ochrelune-canvas);
+  --el-fill-color-extra-light: var(--ochrelune-canvas);
+  --el-fill-color-blank: var(--ochrelune-surface);
+  --el-fill-color-dark: var(--ochrelune-surface-strong);
+  --el-text-color-primary: var(--ochrelune-text);
+  --el-text-color-regular: var(--ochrelune-text-secondary);
+  --el-text-color-secondary: var(--ochrelune-text-muted);
+  --el-text-color-placeholder: var(--ochrelune-text-muted);
+  --el-text-color-disabled: #8b8377;
+  --el-border-color: var(--ochrelune-control-border);
+  --el-border-color-light: var(--ochrelune-border);
+  --el-border-color-lighter: var(--ochrelune-border);
+  --el-border-color-extra-light: var(--ochrelune-border);
+  --el-border-color-dark: var(--ochrelune-text-muted);
+  --el-color-white: var(--ochrelune-surface);
+  --el-color-black: var(--ochrelune-text);
+  --el-disabled-bg-color: var(--ochrelune-surface-muted);
+  --el-disabled-text-color: #8b8377;
+  --el-disabled-border-color: var(--ochrelune-border);
+  --el-mask-color: rgb(250 248 246 / 85%);
+  --el-overlay-color: var(--ochrelune-backdrop);
+  --el-overlay-color-light: var(--ochrelune-backdrop);
+  --el-overlay-color-lighter: var(--ochrelune-backdrop);
+  --el-box-shadow: var(--ochrelune-shadow-overlay);
+  --el-box-shadow-light: var(--ochrelune-shadow-overlay);
+  --el-box-shadow-lighter: var(--ochrelune-shadow-overlay);
+}
+
+:root {
+  --el-color-primary: var(--ochrelune-accent);
+  --el-color-primary-light-3: color-mix(
+    in srgb,
+    var(--ochrelune-accent) 70%,
+    var(--ochrelune-surface)
+  );
+  --el-color-primary-light-5: color-mix(
+    in srgb,
+    var(--ochrelune-accent) 50%,
+    var(--ochrelune-surface)
+  );
+  --el-color-primary-light-7: color-mix(
+    in srgb,
+    var(--ochrelune-accent) 30%,
+    var(--ochrelune-surface)
+  );
+  --el-color-primary-light-8: color-mix(
+    in srgb,
+    var(--ochrelune-accent) 20%,
+    var(--ochrelune-surface)
+  );
+  --el-color-primary-light-9: var(--ochrelune-accent-soft);
+  --el-color-primary-dark-2: color-mix(
+    in srgb,
+    var(--ochrelune-accent) 80%,
+    var(--ochrelune-text)
+  );
+  --el-color-success: var(--ochrelune-success);
+  --el-color-success-light-3: color-mix(
+    in srgb,
+    var(--ochrelune-success) 70%,
+    var(--ochrelune-surface)
+  );
+  --el-color-success-light-5: color-mix(
+    in srgb,
+    var(--ochrelune-success) 50%,
+    var(--ochrelune-surface)
+  );
+  --el-color-success-light-7: color-mix(
+    in srgb,
+    var(--ochrelune-success) 30%,
+    var(--ochrelune-surface)
+  );
+  --el-color-success-light-8: color-mix(
+    in srgb,
+    var(--ochrelune-success) 20%,
+    var(--ochrelune-surface)
+  );
+  --el-color-success-light-9: var(--ochrelune-success-bg);
+  --el-color-success-dark-2: color-mix(
+    in srgb,
+    var(--ochrelune-success) 80%,
+    var(--ochrelune-text)
+  );
+  --el-color-warning: var(--ochrelune-warning);
+  --el-color-warning-light-3: color-mix(
+    in srgb,
+    var(--ochrelune-warning) 70%,
+    var(--ochrelune-surface)
+  );
+  --el-color-warning-light-5: color-mix(
+    in srgb,
+    var(--ochrelune-warning) 50%,
+    var(--ochrelune-surface)
+  );
+  --el-color-warning-light-7: color-mix(
+    in srgb,
+    var(--ochrelune-warning) 30%,
+    var(--ochrelune-surface)
+  );
+  --el-color-warning-light-8: color-mix(
+    in srgb,
+    var(--ochrelune-warning) 20%,
+    var(--ochrelune-surface)
+  );
+  --el-color-warning-light-9: var(--ochrelune-warning-bg);
+  --el-color-warning-dark-2: color-mix(
+    in srgb,
+    var(--ochrelune-warning) 80%,
+    var(--ochrelune-text)
+  );
+  --el-color-danger: var(--ochrelune-danger);
+  --el-color-danger-light-3: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 70%,
+    var(--ochrelune-surface)
+  );
+  --el-color-danger-light-5: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 50%,
+    var(--ochrelune-surface)
+  );
+  --el-color-danger-light-7: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 30%,
+    var(--ochrelune-surface)
+  );
+  --el-color-danger-light-8: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 20%,
+    var(--ochrelune-surface)
+  );
+  --el-color-danger-light-9: var(--ochrelune-danger-bg);
+  --el-color-danger-dark-2: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 80%,
+    var(--ochrelune-text)
+  );
+  --el-color-error: var(--ochrelune-danger);
+  --el-color-error-light-3: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 70%,
+    var(--ochrelune-surface)
+  );
+  --el-color-error-light-5: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 50%,
+    var(--ochrelune-surface)
+  );
+  --el-color-error-light-7: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 30%,
+    var(--ochrelune-surface)
+  );
+  --el-color-error-light-8: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 20%,
+    var(--ochrelune-surface)
+  );
+  --el-color-error-light-9: var(--ochrelune-danger-bg);
+  --el-color-error-dark-2: color-mix(
+    in srgb,
+    var(--ochrelune-danger) 80%,
+    var(--ochrelune-text)
+  );
+  --el-color-info: var(--ochrelune-info);
+  --el-color-info-light-3: color-mix(
+    in srgb,
+    var(--ochrelune-info) 70%,
+    var(--ochrelune-surface)
+  );
+  --el-color-info-light-5: color-mix(
+    in srgb,
+    var(--ochrelune-info) 50%,
+    var(--ochrelune-surface)
+  );
+  --el-color-info-light-7: color-mix(
+    in srgb,
+    var(--ochrelune-info) 30%,
+    var(--ochrelune-surface)
+  );
+  --el-color-info-light-8: color-mix(
+    in srgb,
+    var(--ochrelune-info) 20%,
+    var(--ochrelune-surface)
+  );
+  --el-color-info-light-9: var(--ochrelune-info-bg);
+  --el-color-info-dark-2: color-mix(
+    in srgb,
+    var(--ochrelune-info) 80%,
+    var(--ochrelune-text)
+  );
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--ochrelune-action);
+  --el-button-border-color: var(--ochrelune-action);
+  --el-button-text-color: var(--ochrelune-on-action);
+  --el-button-hover-bg-color: var(--ochrelune-action-hover);
+  --el-button-hover-border-color: var(--ochrelune-action-hover);
+  --el-button-hover-text-color: var(--ochrelune-on-action);
+  --el-button-active-bg-color: var(--ochrelune-action);
+  --el-button-active-border-color: var(--ochrelune-action);
+  --el-button-disabled-bg-color: var(--ochrelune-surface-strong);
+  --el-button-disabled-border-color: var(--ochrelune-border);
+  --el-button-disabled-text-color: var(--ochrelune-text-muted);
+}
+.el-button--primary.is-plain {
+  --el-button-bg-color: var(--ochrelune-surface);
+  --el-button-text-color: var(--ochrelune-text);
+  --el-button-border-color: var(--ochrelune-control-border);
+}
+.el-button--primary.is-link,
+.el-button--primary.is-text {
+  --el-button-text-color: var(--ochrelune-accent);
+  --el-button-hover-text-color: var(--ochrelune-accent-hover);
+  --el-button-active-text-color: var(--ochrelune-accent-hover);
+}
+.el-dialog {
+  --el-dialog-border-radius: var(--ochrelune-radius-dialog);
+}
+.el-table {
+  --el-table-row-hover-bg-color: var(--ochrelune-surface-subtle);
+  --el-table-current-row-bg-color: var(--ochrelune-accent-soft);
+}
+.el-switch {
+  --el-switch-on-color: var(--ochrelune-action);
+  --el-switch-off-color: var(--ochrelune-control-border);
+}
+.el-checkbox,
+.el-radio {
+  --el-checkbox-checked-bg-color: var(--ochrelune-action);
+  --el-checkbox-checked-input-border-color: var(--ochrelune-action);
+  --el-radio-input-border-color-hover: var(--ochrelune-focus);
+}
+::selection {
+  background: var(--ochrelune-selection);
+  color: var(--ochrelune-text);
+}
+:where(button, a, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ochrelune-focus);
+  outline-offset: 2px;
+}
+nav a:hover:not(.router-link-active),
+.segmented button:hover:not(.selected),
+.lesson-selector:hover:not(.selected),
+.library-card:hover,
+.slide-card:hover {
+  background-color: var(--ochrelune-surface-strong);
+}
+.button-link:hover,
+.text-button:hover {
+  color: var(--ochrelune-accent-hover);
+}
+.camera button:focus-visible {
+  outline-color: var(--ochrelune-on-action);
+}
+@media (prefers-reduced-motion: reduce) {
+  .el-button,
+  .el-input__wrapper,
+  .el-select__wrapper {
+    transition: none;
+  }
+}

@@ -9,7 +9,7 @@
 | GET | `/health` | 健康、运行数量、调度是否启动、自动化暂停状态 |
 | GET | `/api/courses`, `/api/lectures`, `/api/assignments`, `/api/sync` | 可选 `course_id` 查询参数 |
 | POST | `/api/sync` | 可选 `course_id`，手动同步会刷新课表 |
-| POST | `/api/assignments/sync` | `course_id` |
+| POST | `/api/assignments/sync` | 立即同步作业；空请求或 `{}` 同步全部启用课程，可选 `course_id` 指定单门课程。返回 202 和 `execution_ids`，单门同时保留 `execution_id`；通过 `/api/executions/{id}` 查询结果 |
 | GET/PATCH | `/api/courses/{id}/rules` | `asr/slides/live` 布尔值；`null` 恢复继承全局设置 |
 | GET/POST | `/api/automation` | `paused` 布尔值；恢复时可启动原先未启动的调度器 |
 | GET | `/api/sources` | `course_id, lecture_id, kind=vod/live`；`show_urls=1` 显示临时私有地址 |
@@ -51,3 +51,5 @@
 - `scans` 包含各课次二维码扫描状态（`complete`, `partial`, `failed`, `not_scanned`）、扫描图片数与检测数。未扫描 / 失败不等同于未发现二维码。
 - 二维码事件只返回具有非空解码内容的确认记录，兼容过滤旧版报告中的误检候选。
 - 只投影正式 `outputs` 下的已发布内容，不混入 samples、pending 或 previous。返回的二维码内容按普通文本处理，不自动请求 URL。
+
+作业自动同步使用独立 `assignment_interval`，默认 1800 秒（30 分钟），按课程保存派发时间；不受视频同步间隔影响。自动化暂停时暂停自动同步，手动请求仍可执行。`GET /api/assignments` 只读取已同步列表。

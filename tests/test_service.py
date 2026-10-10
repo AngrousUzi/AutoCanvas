@@ -136,7 +136,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.store.put('lectures','1:live:4',{'id':'4','course_id':'1','kind':'live','begin':(now+timedelta(minutes=5)).isoformat(),'end':(now+timedelta(hours=1)).isoformat()})
         await self.service.tick()
         await self.service.tick()
-        self.assertEqual(len(self.store.executions()),3)
+        self.assertEqual(len(self.store.executions()),4)
         self.store.put('control','automation',{'paused':True})
         await self.service.start(automation=False)
         await asyncio.sleep(.1)
@@ -163,3 +163,43 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             r=await client.get('/plugins');self.assertEqual(r.status,404)
         finally:
             await client.close()
+
+
+    async def test_assignments_have_independent_half_hour_schedule(self):
+        from unittest.mock import patch
+        self.settings.auto_asr = self.settings.auto_slides = self.settings.auto_live = False
+        self.store.put('sync', 'scheduled', {'at': 10000})
+        self.store.put('courses','inactive',{'id':'inactive','active':False})
+        with patch('autocanvas.service.time.time', return_value=10000):
+            await self.service.tick()
+        rows = self.store.executions()
+        self.assertEqual([(r['kind'],r['course_id']) for r in rows],[('assignments','1')])
+        run=rows[0]['id']; self.store.finish(run,'succeeded')
+        with patch('autocanvas.service.time.time', return_value=11799):
+            await self.service.tick()
+        self.assertEqual(self.store.execution(run)['status'],'succeeded')
+        # The persisted timestamp also survives a new Service instance.
+        restarted=Service(self.settings,self.store,None,None,None,None)
+        with patch('autocanvas.service.time.time', return_value=11800):
+            await restarted.tick()
+        self.assertEqual(self.store.execution(run)['status'],'pending')
+        self.assertEqual(len(self.store.executions()),1)
+
+    async def test_manual_assignment_sync_all_or_one_and_while_paused(self):
+        self.store.put('courses','3',{'id':'3','active':True})
+        self.store.put('courses','4',{'id':'4','active':False})
+        self.store.put('control','automation',{'paused':True})
+        await self.service.tick()
+        self.assertEqual(self.store.executions(),[])
+        client=TestClient(TestServer(create_app(self.service)));await client.start_server()
+        try:
+            response=await client.post('/api/assignments/sync')
+            self.assertEqual(response.status,202)
+            ids=(await response.json())['execution_ids'];self.assertEqual(len(ids),2)
+            self.assertEqual({self.store.execution(i)['course_id'] for i in ids},{'1','3'})
+            response=await client.post('/api/assignments/sync',json={'course_id':'1'})
+            result=await response.json();self.assertEqual(result['execution_ids'],[result['execution_id']])
+            self.assertEqual(self.store.claim('assignments',allow_automatic=False)['course_id'],'1')
+            response=await client.post('/api/assignments/sync',json={'course_id':'missing'})
+            self.assertEqual(response.status,404)
+        finally:await client.close()

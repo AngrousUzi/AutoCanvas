@@ -7,7 +7,7 @@ from autocanvas.attendance import LatestAttendance, parse_code
 from autocanvas.storage import Store
 
 
-def url(token='OLD', course='10003', history='history'):
+def url(token='OLD', course='10001', history='history'):
     return f'https://mlearning.sjtu.edu.cn/lms/mobile2/forscan/?courseCode={course}&rollCallToken={token}&signHistoryId={history}'
 
 
@@ -27,10 +27,56 @@ class AttendanceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.store=Store(Path(self.tmp.name)/'state.sqlite3')
         self.client=Client();self.enabled=True
-        self.worker=LatestAttendance(self.client,self.store,lambda c:self.enabled)
+        self.worker=LatestAttendance(self.client,self.store,lambda c:self.enabled,sign_delay=0)
     async def asyncTearDown(self):self.tmp.cleanup()
     def offer(self,token='OLD',age=0):
-        self.worker.offer('view',[{'content':url(token)}],'10003','lecture',time.monotonic()-age)
+        self.worker.offer('view',[{'content':url(token)}],'10001','lecture',time.monotonic()-age)
+
+    async def test_default_delay_is_three_seconds(self):
+        worker=LatestAttendance(self.client,self.store,lambda c:True)
+        self.assertEqual(worker.sign_delay,3.0)
+
+    async def test_delay_reselects_rotating_code_without_resetting_deadline(self):
+        self.worker.sign_delay=.08
+        self.offer()
+        first=self.worker.first_seen['10001:history']
+        task=asyncio.create_task(self.worker.dispatch())
+        await self.client.preparing.wait()
+        await asyncio.sleep(.02)
+        self.assertFalse(self.client.sent)
+        self.offer('NEW')
+        self.assertEqual(self.worker.first_seen['10001:history'],first)
+        await asyncio.wait_for(task,1)
+        self.assertGreaterEqual(time.monotonic()-first,.08)
+        self.assertEqual([c['token'] for c in self.client.sent],['NEW'])
+        self.offer('AGAIN');await self.worker.dispatch()
+        self.assertEqual(len(self.client.sent),1)
+
+    async def test_delay_discards_missing_stale_or_disabled_code(self):
+        for reason in ('missing','stale','disabled'):
+            with self.subTest(reason=reason):
+                self.enabled=True
+                self.worker.first_seen.clear()
+                self.worker.sign_delay=.04
+                self.offer()
+                task=asyncio.create_task(self.worker.dispatch())
+                await asyncio.sleep(.01)
+                if reason=='missing':self.worker.offer('view',[],'10001','lecture',time.monotonic())
+                elif reason=='stale':self.worker.latest['view'][0]['received']-=3
+                else:self.enabled=False
+                await asyncio.wait_for(task,1)
+                self.assertFalse(self.client.sent)
+
+    async def test_new_rollcall_during_delay_gets_its_own_delay(self):
+        self.worker.sign_delay=.06
+        self.offer()
+        task=asyncio.create_task(self.worker.dispatch())
+        await asyncio.sleep(.02)
+        self.worker.offer('view',[{'content':url('NEW',history='next')}],'10001','lecture',time.monotonic())
+        started=self.worker.first_seen['10001:next']
+        await asyncio.wait_for(task,1)
+        self.assertGreaterEqual(time.monotonic()-started,.06)
+        self.assertEqual([c['history'] for c in self.client.sent],['next'])
 
     async def test_reselects_latest_after_login_wait(self):
         self.client.ready.clear();self.offer()
@@ -41,7 +87,7 @@ class AttendanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_frame_without_qr_invalidates_pending_code(self):
         self.client.ready.clear();self.offer()
         task=asyncio.create_task(self.worker.dispatch());await self.client.preparing.wait()
-        self.worker.offer('view',[],'10003','lecture',time.monotonic())
+        self.worker.offer('view',[],'10001','lecture',time.monotonic())
         self.client.ready.set();await task
         self.assertFalse(self.client.sent)
 
@@ -78,16 +124,16 @@ class AttendanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.list('attendance')[0]['status'],'unknown')
 
     async def test_restart_marks_pending_unknown(self):
-        self.store.put('attendance','10003:history',{'id':'10003:history','status':'submitting'})
+        self.store.put('attendance','10001:history',{'id':'10001:history','status':'submitting'})
         task=asyncio.create_task(self.worker.run());await asyncio.sleep(.02)
         self.offer('NEW');await asyncio.sleep(.02);task.cancel();await asyncio.gather(task,return_exceptions=True)
-        self.assertEqual(self.store.get('attendance','10003:history')['status'],'unknown')
+        self.assertEqual(self.store.get('attendance','10001:history')['status'],'unknown')
         self.assertFalse(self.client.sent)
 
     def test_strict_target_and_course_validation(self):
-        self.assertIsNotNone(parse_code(url(),'10003'))
-        for value in [url().replace('mlearning.sjtu.edu.cn','evil.example'),url(course='1'),url(token='../bad'),url()+'&courseCode=10003',url().replace('https:','http:')]:
-            self.assertIsNone(parse_code(value,'10003'))
+        self.assertIsNotNone(parse_code(url(),'10001'))
+        for value in [url().replace('mlearning.sjtu.edu.cn','evil.example'),url(course='1'),url(token='../bad'),url()+'&courseCode=10001',url().replace('https:','http:')]:
+            self.assertIsNone(parse_code(value,'10001'))
 
     async def test_observer_discards_decode_when_newer_frame_arrives(self):
         from autocanvas.live_attendance import LiveAttendance
@@ -107,7 +153,7 @@ class AttendanceTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.Event().wait()
         observer=LiveAttendance(self.store,Path(self.tmp.name),None,self.client,reader=reader,detector_factory=Detector)
         observer.worker=self.worker
-        task=asyncio.create_task(observer.observe({'course_id':'10003','id':'lecture'},MediaSource('fixture'),0))
+        task=asyncio.create_task(observer.observe({'course_id':'10001','id':'lecture'},MediaSource('fixture'),0))
         await new_frame.wait();release.set()
         for _ in range(100):
             if self.worker.fresh():break
@@ -124,7 +170,11 @@ class AttendanceTests(unittest.IsolatedAsyncioTestCase):
         replies=[{'resultCode':50000,'resultMessage':'rollcall_token:SECRET不存在！'},
                  {'resultCode':200,'body':{'status':'NORMAL'}},
                  {'resultCode':10001}, {'resultCode':200,'body':{'status':'EXPIRED'}},
-                 {'resultCode':50000,'resultMessage':'请开启定位'}]
+                 {'resultCode':50000,'resultMessage':'请开启定位'},
+                 {'resultCode':200,'body':{'status':'NORMAL'},'resultMessage':'签到成功，请开启定位 SECRET'},
+                 {'resultCode':200,'body':{'status':'EXISTED'},'resultMessage':'已签到，location permission denied'},
+                 {'resultCode':200,'body':{'status':'EXPIRED'},'resultMessage':'请开启定位'},
+                 {'resultCode':200,'body':{'status':'LOCATION_REQUIRED'},'resultMessage':'请开启定位'}]
         async def reply(request):
             self.assertEqual(request.headers['Authorization'],'fixture-token')
             return web.json_response(replies.pop(0))
@@ -133,11 +183,13 @@ class AttendanceTests(unittest.IsolatedAsyncioTestCase):
         try:
             with patch('autocanvas.attendance.HOST',str(server.make_url('')).rstrip('/')):
                 client=MobileLogin(None)
-                for expected in ['expired','succeeded','needs_login','expired','needs_action']:
+                for index, expected in enumerate(['expired','succeeded','needs_login','expired','needs_action','succeeded','succeeded','expired','needs_action']):
                     client.token='fixture-token'
-                    result=await client.submit(parse_code(url('SECRET'),'10003'))
+                    result=await client.submit(parse_code(url('SECRET'),'10001'))
                     self.assertEqual(result['status'],expected)
                     self.assertNotIn('SECRET',str(result))
+                    if index in (4,5,6):self.assertTrue(result['location_reminder'])
+                    if index in (5,6):self.assertIn('已确认成功', result['message'])
         finally:await server.close()
 
     async def test_real_video_frames_decode_and_stop_without_pipe_deadlock(self):

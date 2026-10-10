@@ -10,7 +10,75 @@ from aiohttp import web, ClientSession, ClientTimeout
 
 COOKIE = 'autocanvas_dashboard'
 LOGIN = '''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AutoCanvas · 登录</title><style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f6f1;color:#193e32;font-family:system-ui,sans-serif}.card{width:min(420px,90vw);padding:40px;background:white;border:1px solid #dde5dc;border-radius:20px;box-shadow:0 18px 60px #183e3210}h1{font-size:28px;margin:0 0 10px}p{color:#6b7f74;line-height:1.6}label{display:block;margin:28px 0 10px}input,button{width:100%;padding:14px;border-radius:10px;font:inherit}input{border:1px solid #cbd8cd}button{margin-top:18px;border:0;background:#193e32;color:white;cursor:pointer}button:disabled{opacity:.5}#error{color:#ac3d31;min-height:24px;font-size:14px}.brand{font-size:12px;letter-spacing:3px;margin-bottom:24px;color:#6b7f74}</style><main class="card"><div class="brand">PERSONAL LEARNING SPACE</div><h1>AutoCanvas</h1><p>输入访问密码，进入个人工作空间。</p><form id="form"><label for="password">访问密码</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus maxlength="1024"><button id="submit">进入工作空间</button><p id="error" role="alert"></p></form></main><script>
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; min-height: 100dvh;
+  display: grid; place-items: center; padding: 32px 20px;
+  background: #f4efe8; color: #302b28;
+  font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
+  isolation: isolate;
+}
+.fluid-background {
+  position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  background: radial-gradient(ellipse at 75% 18%, #fffdf8 0, transparent 58%), #f3ede4;
+}
+.fluid-background svg {
+  width: 100%; height: 100%; display: block;
+  animation: fluid-drift 28s ease-in-out infinite alternate;
+  transform-origin: center;
+}
+.login {
+  width: min(420px, 100%); padding: 40px 36px 28px;
+  background: rgb(255 253 249 / 92%);
+  border: 1px solid rgb(255 255 255 / 85%); border-radius: 20px;
+  box-shadow: 0 24px 80px -32px rgb(100 67 43 / 24%), 0 2px 8px rgb(100 67 43 / 4%);
+}
+h1 { font-size: 26px; font-weight: 600; margin: 0 0 12px; line-height: 1.35; }
+p { color: #70655d; font-size: 14px; line-height: 1.7; }
+.login > p { margin: 0; }
+label { display: block; margin: 28px 0 8px; font-size: 14px; }
+input, button { width: 100%; min-height: 46px; padding: 12px 14px; border-radius: 8px; font: inherit; font-size: 14px; }
+input { border: 1px solid #b0a298; background: #fffdfa; color: #302b28; }
+button { margin-top: 16px; border: 0; background: #302b28; color: #faf9f7; cursor: pointer; transition: background-color 150ms; }
+button:hover { background: #4b413b; }
+button:disabled { opacity: .5; cursor: wait; }
+input:focus-visible, button:focus-visible { outline: 2px solid #9f5038; outline-offset: 3px; }
+#error { color: #a13e32; min-height: 24px; margin: 12px 0 0; font-size: 14px; }
+@keyframes fluid-drift {
+  from { transform: scale(1.04) translate(-.7%, -.5%); }
+  to { transform: scale(1.1) translate(.7%, .5%); }
+}
+@media (max-width: 480px) {
+  body { padding: 24px 20px; }
+  .login { padding: 32px 24px 20px; border-radius: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluid-background svg { animation: none; }
+  button { transition: none; }
+}
+</style>
+<div class="fluid-background" aria-hidden="true">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1000" preserveAspectRatio="xMidYMid slice" focusable="false">
+    <defs>
+      <linearGradient id="sand" x1="0" y1="0" x2="1" y2="1">
+        <stop stop-color="#cbb798"/><stop offset=".5" stop-color="#e4d2ba"/><stop offset="1" stop-color="#f7f0e6"/>
+      </linearGradient>
+      <linearGradient id="clay" x1="0" y1="0" x2="1" y2=".7">
+        <stop stop-color="#f1dfcf"/><stop offset=".55" stop-color="#d8b298"/><stop offset="1" stop-color="#c9957e"/>
+      </linearGradient>
+      <linearGradient id="silk" x1="0" y1="1" x2=".9" y2="0">
+        <stop stop-color="#faf5ed"/><stop offset=".55" stop-color="#fdfbf5"/><stop offset="1" stop-color="#e5d7c3"/>
+      </linearGradient>
+      <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="20"/></filter>
+    </defs>
+    <g filter="url(#soft)">
+      <path fill="url(#sand)" d="M-180-130H1480C1260 55 1120 68 940 54 657 29 714 359 448 410 199 458 203 692-150 774Z"/>
+      <path fill="url(#clay)" d="M1600 104C1302 183 1402 406 1099 435 794 465 1007 722 671 785 446 827 552 1110 229 1140H1600Z"/>
+      <path fill="url(#silk)" d="M-150 1057C125 783 386 947 530 650 640 422 904 664 1068 479 1226 301 1197 122 1535 126L1560-10C1218-54 1100 185 952 302 735 475 583 276 420 547 263 807 54 670-170 832Z"/>
+    </g>
+  </svg>
+</div>
+<main class="login"><h1>AutoCanvas</h1><p>输入访问密码以登录。</p><form id="form"><label for="password">访问密码</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus maxlength="1024" aria-describedby="error"><button id="submit">登录</button><p id="error" role="alert"></p></form></main><script>
 const form=document.getElementById('form'),button=document.getElementById('submit'),error=document.getElementById('error');form.addEventListener('submit',async e=>{e.preventDefault();button.disabled=true;error.textContent='';try{const r=await fetch('/_dashboard/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('password').value})});if(r.ok){location.replace('/');return}error.textContent=r.status===429?'尝试过于频繁，请稍后再试。':'密码不正确，请重试。'}catch{error.textContent='暂时无法连接，请稍后再试。'}finally{button.disabled=false}});
 </script></html>'''
 

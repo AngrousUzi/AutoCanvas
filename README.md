@@ -12,6 +12,7 @@ Python 3.11+，系统需要 `ffmpeg` 和 `ffprobe`。可使用虚拟环境或 co
 cd /path/to/AutoCanvas
 python -m venv .venv
 source .venv/bin/activate
+python -m pip install -e .
 python -m autocanvas --help
 ```
 
@@ -148,6 +149,8 @@ npm run dev
 详见 [WebUI 启动与部署](webui/README.md) 和 [API 说明](docs/web-api.md)。
 
 ## 作业列表与 Codex 会话
+
+作业列表默认每 30 分钟从 Canvas 自动同步一次（`assignment_interval = 1800`）。WebUI「立即刷新」或 `POST /api/assignments/sync`（空请求同步全部启用课程，可选 `course_id`）可立即触发同步。自动化暂停时仍可手动刷新。
 
 WebUI「作业」只提供 Canvas 作业列表和独立的 Codex 会话列表。支持新建、查看、续聊、切换模型与停止执行。通过现有密码入口直接调用本机 `codex exec`，无需另外启动 Homework 服务。
 
