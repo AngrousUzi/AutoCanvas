@@ -85,13 +85,13 @@ class Persistence(unittest.TestCase):
 
     def test_claim_priority_then_created(self):
         ids = {}
-        for i, (course, lecture) in enumerate([('5', 'a'), ('96285', 'b'), ('7', 'c'), ('97156', 'd'), ('96367', 'e'), ('97156', 'f')]):
+        for i, (course, lecture) in enumerate([('5', 'a'), ('10001', 'b'), ('7', 'c'), ('10002', 'd'), ('10003', 'e'), ('10002', 'f')]):
             ids[lecture] = self.store.enqueue('vod_asr', course, lecture)
             with self.store.connect() as db:
                 db.execute('UPDATE executions SET created=? WHERE id=?', (100+i, ids[lecture]))
-        order = [self.store.claim(('vod_asr', 'local_asr'), priority=['96367', '97156', '96285'])['lecture_id'] for _ in range(6)]
+        order = [self.store.claim(('vod_asr', 'local_asr'), priority=['10003', '10002', '10001'])['lecture_id'] for _ in range(6)]
         self.assertEqual(order, ['e', 'd', 'f', 'b', 'a', 'c'])
-        self.store.enqueue('vod_asr', '96367', 'g')
+        self.store.enqueue('vod_asr', '10003', 'g')
         self.store.enqueue('vod_asr', '5', 'h')
         with self.store.connect() as db:
             db.execute("UPDATE executions SET created=0 WHERE lecture_id='h'")
