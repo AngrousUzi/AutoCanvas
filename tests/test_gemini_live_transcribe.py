@@ -178,6 +178,55 @@ class Transcriber(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(caught.exception.__cause__)
             self.assertTrue(caught.exception.__suppress_context__)
 
+    def stall_patches(self):
+        patches = [patch.object(live, name, value) for name, value in (('SEND_TIMEOUT', 0.05), ('GRACE', 0.1), ('FAIL_WAIT', 0.05), ('CLEANUP_TIMEOUT', 0.05))]
+        for target in patches:
+            target.start()
+            self.addCleanup(target.stop)
+
+    async def test_stalled_send_is_remote_error(self):
+        self.stall_patches()
+        stuck = asyncio.Event()
+        class Stuck(FakeWS):
+            async def send_json(self, obj):
+                if 'audio' in obj.get('realtimeInput', {}):
+                    await stuck.wait()
+                self.sent.append(obj)
+        self.ws = Stuck()
+        self.session = FakeSession(self.ws)
+        t = GeminiLiveFileTranscriber(KEY, idle=0.05, setup_timeout=0.05, reader=self.reader(1.0))
+        with patch.object(live.aiohttp, 'ClientSession', lambda: self.session):
+            with self.assertRaises(RemoteError) as caught:
+                await asyncio.wait_for(t.transcribe('chunk.mp3', 0, 1.0), 5)
+        self.assertEqual((caught.exception.stage, caught.exception.code), ('gemini_live', 'send_timeout'))
+        self.assertTrue(self.ws.closed and self.session.closed and self.reads[-1] == 'closed')
+
+    async def test_session_deadline_when_nothing_finishes(self):
+        self.stall_patches()
+        started = asyncio.Event()
+        async def read(source, *, chunk_seconds):
+            try:
+                for i in range(2):
+                    yield AudioChunk(b'\0\0'*1600, 16000, i*0.1)
+                await started.wait()  # the reader (ffmpeg) stalls; audioStreamEnd is never sent
+            finally:
+                self.reads.append('closed')
+        self.ws = FakeWS()
+        self.session = FakeSession(self.ws)
+        t = GeminiLiveFileTranscriber(KEY, idle=0.05, setup_timeout=0.05, reader=read)
+        with patch.object(live.aiohttp, 'ClientSession', lambda: self.session):
+            with self.assertRaises(RemoteError) as caught:
+                await asyncio.wait_for(t.transcribe('chunk.mp3', 0, 0.4), 5)
+        self.assertEqual((caught.exception.stage, caught.exception.code), ('gemini_live', 'timeout'))
+        self.assertIn('stalled', str(caught.exception))
+        self.assertFalse(self.ws.ended)
+        self.assertTrue(self.ws.closed and self.session.closed and self.reads[-1] == 'closed')
+
+    async def test_missing_turn_complete_finishes_within_idle(self):
+        self.stall_patches()
+        rows = await asyncio.wait_for(self.run_live([(10, final('尾'))]), 5)
+        self.assertEqual(rows, [(0, 1.0, '尾')])
+
     async def test_setup_close_and_limits(self):
         ws = FakeWS()
         ws.script = [(0, close(1007, 'Invalid model'))]

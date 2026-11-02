@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import json
+import logging
 import re
 import time
 import aiohttp
@@ -12,6 +13,11 @@ ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelangu
 MIME = 'audio/pcm;rate=16000'
 FRAME = 0.1
 SESSION = 540  # wall seconds of streaming per chunk; sessions are capped at 10 minutes
+SEND_TIMEOUT = 30  # one websocket send; a stalled TCP connection otherwise blocks it forever
+GRACE = 60  # slack on top of the expected streaming time before a session counts as stalled
+FAIL_WAIT = 2  # how long the receiver may explain a failed send
+CLEANUP_TIMEOUT = 10  # each cleanup step; a stuck one is leaked rather than hung on
+log = logging.getLogger(__name__)
 
 
 def seconds(value):
@@ -119,19 +125,33 @@ class GeminiLiveFileTranscriber:
                 raise RemoteError('gemini_live setup failed', stage='gemini_live', code=type(error).__name__) from None
             raise
 
+    async def push(self, ws, obj):
+        try:
+            await asyncio.wait_for(ws.send_json(obj), SEND_TIMEOUT)
+        except asyncio.TimeoutError:
+            raise RemoteError('gemini_live send timed out', stage='gemini_live', code='send_timeout') from None
+
+    async def bounded(self, awaitable, what):
+        try:
+            await asyncio.wait_for(awaitable, CLEANUP_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning('gemini_live cleanup timed out: %s', what)
+        except Exception:
+            pass
+
     async def send(self, ws, path, ended, sent):
         reader = self.reader(MediaSource(str(path)), chunk_seconds=FRAME)
         began = time.monotonic()
         try:
             async for chunk in reader:
                 sent[0] += chunk.duration
-                await ws.send_json({'realtimeInput': {'audio': {'mimeType': MIME, 'data': base64.b64encode(chunk.pcm).decode('ascii')}}})
+                await self.push(ws, {'realtimeInput': {'audio': {'mimeType': MIME, 'data': base64.b64encode(chunk.pcm).decode('ascii')}}})
                 # Pace against a deadline, not per-frame sleeps that timer granularity stretches; catch up at most 1 s after a stall.
                 began = max(began, time.monotonic()-sent[0]/self.speed-1)
                 await asyncio.sleep(max(0, began+sent[0]/self.speed-time.monotonic()))
         finally:
             await reader.aclose()
-        await ws.send_json({'realtimeInput': {'audioStreamEnd': True}})
+        await self.push(ws, {'realtimeInput': {'audioStreamEnd': True}})
         ended.set()
 
     async def receive(self, ws, timeline, ended, sent):
@@ -167,24 +187,31 @@ class GeminiLiveFileTranscriber:
             ws = await self.connect(http)
             tasks = [asyncio.create_task(self.receive(ws, timeline, ended, sent)), asyncio.create_task(self.send(ws, path, ended, sent))]
             try:
-                await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-                if not tasks[0].done():
+                # A healthy session streams for duration/speed, then waits at most idle for the tail.
+                limit = self.setup_timeout+duration/self.speed+self.idle+GRACE
+                done, _ = await asyncio.wait(tasks, timeout=limit, return_when=asyncio.FIRST_EXCEPTION)
+                if done and not tasks[0].done():
                     # A failed send usually means the socket closed; the receiver reports why.
-                    await asyncio.wait(tasks[:1], timeout=2)
+                    await asyncio.wait(tasks[:1], timeout=FAIL_WAIT)
                 for task in tasks:
                     if task.done() and not task.cancelled() and task.exception():
                         raise task.exception()
+                if not all(task.done() for task in tasks):
+                    raise RemoteError('gemini_live session stalled', stage='gemini_live', code='timeout')
             except (aiohttp.ClientError, OSError) as error:
                 raise RemoteError('gemini_live socket failed', stage='gemini_live', code=type(error).__name__) from None
             finally:
                 for task in tasks:
                     task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                try:
-                    await ws.close()
-                except Exception:
-                    pass
+                # asyncio.wait never cancels or waits past the timeout, unlike gather under wait_for.
+                _, stuck = await asyncio.wait(tasks, timeout=CLEANUP_TIMEOUT)
+                if stuck:
+                    log.warning('gemini_live cleanup: %d task(s) did not stop', len(stuck))
+                for task in tasks:
+                    if task.done() and not task.cancelled():
+                        task.exception()
+                await self.bounded(ws.close(), 'ws.close')
         finally:
-            await http.close()
+            await self.bounded(http.close(), 'http.close')
         clamp = lambda t: min(max(offset+t, offset), offset+duration)
         return [TranscriptSegment(clamp(start), clamp(end), text) for start, end, text in timeline.rows]
