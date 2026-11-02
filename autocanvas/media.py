@@ -16,6 +16,13 @@ def inputs(source):
     return args
 
 
+def reconnect(source):
+    # Replay downloads only: a dropped connection resumes instead of silently ending the output early.
+    if source.location.startswith(('http://', 'https://')):
+        return ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_on_network_error', '1', '-reconnect_delay_max', '10']
+    return []
+
+
 async def stop(process):
     if process.returncode is None:
         try:
@@ -85,7 +92,7 @@ async def audio(source, *, sample_rate=16000, chunk_seconds=3, offset=0, duratio
 async def audio_file(source, destination, *, offset=0, duration, sample_rate=16000):
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    args = ['ffmpeg', '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', *inputs(source)]
+    args = ['ffmpeg', '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', *inputs(source), *reconnect(source)]
     if offset:
         args += ['-ss', str(offset)]
     args += ['-i', source.location, '-t', str(duration), '-vn', '-ac', '1', '-ar', str(sample_rate), '-c:a', 'libmp3lame', '-b:a', '48k', str(destination)]
@@ -100,7 +107,7 @@ async def sample_frames(source, destination: Path, *, every=5, duration=None):
     if every <= 0:
         raise ValueError('Frame interval must be positive')
     destination.mkdir(parents=True, exist_ok=True)
-    args = ['ffmpeg', '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', *inputs(source), '-i', source.location]
+    args = ['ffmpeg', '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', *inputs(source), *reconnect(source), '-i', source.location]
     if duration is not None:
         args += ['-t', str(duration)]
     args += ['-an', '-vf', f'fps=1/{every}:start_time=0', '-pix_fmt', 'yuvj420p', '-q:v', '2', str(destination/'%08d.jpg')]
@@ -108,7 +115,7 @@ async def sample_frames(source, destination: Path, *, every=5, duration=None):
     if not next(destination.glob('*.jpg'), None):
         # Clips shorter than the sampling interval still have a useful first frame.
         await command(['ffmpeg', '-nostdin', '-y', '-hide_banner', '-loglevel', 'error',
-                       *inputs(source), '-i', source.location, '-frames:v', '1', '-pix_fmt', 'yuvj420p', '-q:v', '2',
+                       *inputs(source), *reconnect(source), '-i', source.location, '-frames:v', '1', '-pix_fmt', 'yuvj420p', '-q:v', '2',
                        str(destination/'00000001.jpg')], timeout=60)
         if not next(destination.glob('*.jpg'), None):
             raise MediaError('No video frames decoded')

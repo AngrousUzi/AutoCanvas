@@ -133,18 +133,47 @@ async def remote_chunk(transcribers, path, offset, real):
     raise RateLimited('All remote transcribers rate limited', stage='transcribe', retry_after=max(0, wait) if wait is not None else None)
 
 
-async def transcribe_source_remote(source, transcribers, folder, cache, *, chunk_seconds=1500, duration=None):
+RETRY_WAITS = (5, 15, 30)
+
+
+async def media_total(source, duration=None):
+    """Real media length in seconds, or None when it cannot be determined."""
+    if duration:
+        return float(duration)
+    try:
+        total = float((await media.probe(source)).get('format', {}).get('duration') or 0)
+    except Exception:
+        return None
+    return total if total > 0 else None
+
+
+async def transcribe_source_remote(source, transcribers, folder, cache, *, chunk_seconds=1500, duration=None, refresh=None):
     output = Transcript(folder)
     cache.mkdir(parents=True, exist_ok=True)
     offset = output.end
+    total = await media_total(source, duration)
     try:
         while True:
+            if total is not None and total-offset < 0.5:
+                break
             length = min(chunk_seconds, duration-offset) if duration else chunk_seconds
             if length < 0.5:
                 break
+            expected = min(chunk_seconds, total-offset) if total is not None else length
             path = cache/f'{int(offset*1000):012d}.mp3'
             try:
-                real = await media.audio_file(source, path, offset=offset, duration=length)
+                for attempt in range(len(RETRY_WAITS)+1):
+                    if refresh is not None:
+                        source = await refresh()
+                    real = await media.audio_file(source, path, offset=offset, duration=length)
+                    if total is None or real >= expected-1:
+                        break
+                    # ffmpeg can exit 0 with a partial file after a stalled download or an expired link.
+                    path.unlink(missing_ok=True)
+                    if attempt == len(RETRY_WAITS):
+                        raise MediaError(f'Audio extraction stopped early at {offset+real:.0f}s of {total:.0f}s')
+                    log.warning('Short audio chunk at %.0fs (%.1fs of %.1fs); retry %d', offset, real, expected, attempt+1)
+                    await asyncio.sleep(RETRY_WAITS[attempt])
                 if real < 0.5:
                     break
                 t, rows = await remote_chunk(transcribers, path, offset, real)
@@ -154,7 +183,7 @@ async def transcribe_source_remote(source, transcribers, folder, cache, *, chunk
             finally:
                 path.unlink(missing_ok=True)
             offset += real
-            if real < length-1:
+            if total is None and real < length-1:
                 break
     finally:
         output.finish()
@@ -198,6 +227,11 @@ async def slides_source(source, folder, cache, *, sample_every=5, duration=None)
     pending.mkdir(parents=True, exist_ok=True)
     try:
         await media.sample_frames(source, cache, every=sample_every, duration=duration)
+        if not duration:
+            total = await media_total(source)
+            frames = sum(1 for _ in cache.glob('*.jpg'))
+            if total is not None and frames*sample_every < total-120:
+                raise MediaError(f'Frame sampling stopped early at {frames*sample_every}s of {total:.0f}s')
         rows = await blocking(extract, cache, pending, sample_every=sample_every)
         serial = []
         for row in rows:
@@ -235,9 +269,9 @@ class Replay:
         self.chunk_seconds, self.sample_every = chunk_seconds, sample_every
         self.platform_transcript, self.transcribers, self.remote_chunk_seconds = platform_transcript, list(transcribers), remote_chunk_seconds
 
-    async def transcribe_media(self, source, folder, cache, duration=None):
+    async def transcribe_media(self, source, folder, cache, duration=None, refresh=None):
         if self.transcribers:
-            return await transcribe_source_remote(source, self.transcribers, folder, cache, chunk_seconds=self.remote_chunk_seconds, duration=duration)
+            return await transcribe_source_remote(source, self.transcribers, folder, cache, chunk_seconds=self.remote_chunk_seconds, duration=duration, refresh=refresh)
         return await transcribe_source(source, self.transcribe, folder, chunk_seconds=self.chunk_seconds, duration=duration)
 
     async def run(self, lecture, kind, options):
@@ -254,5 +288,15 @@ class Replay:
         source = await media.select(sources, purpose, options.get('view'))
         folder = self.root/lecture['course_id']/lecture['id']/kind
         if kind == 'vod_asr':
-            return await self.transcribe_media(source, folder, self.cache/'asr'/lecture['course_id']/lecture['id'], duration=options.get('duration'))
+            async def refresh():
+                # Signed replay links expire; re-resolve and pick the same view.
+                try:
+                    fresh = [s for s in await self.resolve_sources(lecture) if s.view == source.view]
+                    return fresh[0] if fresh else source
+                except AuthenticationRequired:
+                    raise
+                except Exception as error:
+                    log.warning('Source refresh failed: %s', type(error).__name__)
+                    return source
+            return await self.transcribe_media(source, folder, self.cache/'asr'/lecture['course_id']/lecture['id'], duration=options.get('duration'), refresh=refresh)
         return await slides_source(source, folder, self.cache/lecture['course_id']/lecture['id'], sample_every=self.sample_every, duration=options.get('duration'))

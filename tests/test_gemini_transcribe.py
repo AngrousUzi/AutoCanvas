@@ -9,7 +9,8 @@ from unittest.mock import patch
 import requests
 from autocanvas.gemini_transcribe import GeminiTranscriber, segments
 from autocanvas.flows import Replay, CatalogSync, save_platform_transcript, transcribe_source_remote
-from autocanvas.types import AuthenticationRequired, MediaSource, RateLimited, RemoteError, TranscriptSegment
+from autocanvas.outputs import Transcript
+from autocanvas.types import AuthenticationRequired, MediaError, MediaSource, RateLimited, RemoteError, TranscriptSegment
 
 KEY = 'test-secret-key'
 
@@ -228,7 +229,8 @@ class Flow(unittest.IsolatedAsyncioTestCase):
             with patch('autocanvas.flows.media.select', select), patch('autocanvas.flows.transcribe_source_remote', remote), self.assertLogs('autocanvas.flows', 'WARNING') as logs:
                 result = await replay.run(lecture, 'vod_asr', {'duration': 60})
             self.assertEqual(result, root/'outputs'/'1'/'2'/'vod_asr'/'transcript.json')
-            self.assertEqual(seen, [(['T'], root/'outputs'/'1'/'2'/'vod_asr', root/'cache'/'asr'/'1'/'2', {'chunk_seconds': 900, 'duration': 60})])
+            self.assertEqual(seen, [(['T'], root/'outputs'/'1'/'2'/'vod_asr', root/'cache'/'asr'/'1'/'2', {'chunk_seconds': 900, 'duration': 60, 'refresh': seen[0][3]['refresh']})])
+            self.assertEqual(await seen[0][3]['refresh'](), MediaSource('x'))
             self.assertIn('AuthenticationRequired', logs.output[0])
             self.assertNotIn('expired', logs.output[0])
             async def platform(lecture):
@@ -242,6 +244,84 @@ class Flow(unittest.IsolatedAsyncioTestCase):
                 await replay.run(lecture, 'vod_asr', {})
             self.assertEqual(local, [{'chunk_seconds': 3, 'duration': None}])
             self.assertEqual(json.loads((root/'outputs'/'1'/'2'/'platform'/'transcript.json').read_text(encoding='utf-8')), [{'start': 1.5, 'end': 3.0, 'text': '平台'}])
+
+
+class ShortChunk(unittest.IsolatedAsyncioTestCase):
+    """Lecture is 250 s, chunks are 100 s; a partial ffmpeg output must not end the lecture."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.calls, self.refreshed, self.short = [], [], {}
+        async def audio_file(source, destination, *, offset=0, duration):
+            self.calls.append((source.location, offset))
+            destination.write_bytes(b'x')
+            n = self.short.get(offset)
+            if n:
+                self.short[offset] -= 1
+                return 30.0
+            return max(0.0, min(duration, 250-offset))
+        async def probe(source):
+            if self.probe_error:
+                raise MediaError('nope')
+            return {'format': {'duration': '250.0'}}
+        async def refresh():
+            self.refreshed.append(1)
+            return MediaSource(f'fresh{len(self.refreshed)}')
+        self.refresh, self.probe_error = refresh, False
+        async def sleep(seconds):
+            if seconds:
+                self.waits.append(seconds)
+        self.waits = []
+        for target in (patch('autocanvas.flows.media.audio_file', audio_file), patch('autocanvas.flows.media.probe', probe),
+                       patch('autocanvas.flows.asyncio.sleep', sleep)):
+            target.start()
+            self.addCleanup(target.stop)
+        self.fake = SimpleNamespace(spacing=0, name='fake', transcribe=lambda path, offset, duration: [TranscriptSegment(offset, offset+duration, f'{offset:g}')])
+
+    async def test_short_chunk_is_retried_with_fresh_source(self):
+        self.short = {100: 2}
+        result = await transcribe_source_remote(MediaSource('x'), [self.fake], self.root/'o', self.root/'c', chunk_seconds=100, refresh=self.refresh)
+        self.assertEqual([c[1] for c in self.calls], [0, 100, 100, 100, 200])
+        self.assertEqual(len(self.refreshed), 5)
+        self.assertEqual(self.calls[2][0], 'fresh3')
+        self.assertEqual(self.waits, [5, 15])
+        rows = json.loads(result.read_text(encoding='utf-8'))
+        self.assertEqual([r['start'] for r in rows], [0, 100, 200])
+        self.assertEqual(rows[-1]['end'], 250)
+
+    async def test_persistently_short_chunk_raises_and_keeps_earlier_chunks(self):
+        self.short = {100: 99}
+        with self.assertRaises(MediaError) as caught:
+            await transcribe_source_remote(MediaSource('x'), [self.fake], self.root/'o', self.root/'c', chunk_seconds=100, refresh=self.refresh)
+        self.assertIn('stopped early at 130s of 250s', str(caught.exception))
+        self.assertEqual(self.waits, [5, 15, 30])
+        self.assertEqual(len([c for c in self.calls if c[1] == 100]), 4)
+        rows = json.loads((self.root/'o'/'transcript.json').read_text(encoding='utf-8'))
+        self.assertEqual([r['start'] for r in rows], [0])
+        self.assertEqual(Transcript(self.root/'o').end, 100)
+
+    async def test_true_end_is_not_short(self):
+        await transcribe_source_remote(MediaSource('x'), [self.fake], self.root/'o', self.root/'c', chunk_seconds=100)
+        self.assertEqual([c[1] for c in self.calls], [0, 100, 200])
+        self.assertEqual(self.waits, [])
+
+    async def test_probe_failure_keeps_old_behavior(self):
+        self.probe_error, self.short = True, {100: 1}
+        await transcribe_source_remote(MediaSource('x'), [self.fake], self.root/'o', self.root/'c', chunk_seconds=100)
+        self.assertEqual([c[1] for c in self.calls], [0, 100])
+        self.assertEqual(self.waits, [])
+
+    async def test_slides_stopped_early_raises(self):
+        from autocanvas.flows import slides_source
+        async def sample(source, cache, *, every, duration=None):
+            for i in range(10):
+                (cache/f'{i:08d}.jpg').write_bytes(b'x')
+        with patch('autocanvas.flows.media.sample_frames', sample):
+            with self.assertRaises(MediaError) as caught:
+                await slides_source(MediaSource('x'), self.root/'s', self.root/'sc', sample_every=5)
+            self.assertIn('Frame sampling stopped early', str(caught.exception))
+            self.assertFalse((self.root/'sc').exists())
 
 
 class FakeTranscriber:
