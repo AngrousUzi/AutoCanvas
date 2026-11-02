@@ -134,6 +134,8 @@ async def remote_chunk(transcribers, path, offset, real):
 
 
 RETRY_WAITS = (5, 15, 30)
+# The container can report a second or so more than the audio track actually holds.
+END_SLACK = 10.0
 
 
 async def media_total(source, duration=None):
@@ -154,7 +156,7 @@ async def transcribe_source_remote(source, transcribers, folder, cache, *, chunk
     total = await media_total(source, duration)
     try:
         while True:
-            if total is not None and total-offset < 0.5:
+            if total is not None and total-offset < END_SLACK:
                 break
             length = min(chunk_seconds, duration-offset) if duration else chunk_seconds
             if length < 0.5:
@@ -166,7 +168,7 @@ async def transcribe_source_remote(source, transcribers, folder, cache, *, chunk
                     if refresh is not None:
                         source = await refresh()
                     real = await media.audio_file(source, path, offset=offset, duration=length)
-                    if total is None or real >= expected-1:
+                    if total is None or real >= expected-1 or offset+real >= total-END_SLACK:
                         break
                     # ffmpeg can exit 0 with a partial file after a stalled download or an expired link.
                     path.unlink(missing_ok=True)

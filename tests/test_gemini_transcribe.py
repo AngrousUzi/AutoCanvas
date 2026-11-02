@@ -264,11 +264,11 @@ class ShortChunk(unittest.IsolatedAsyncioTestCase):
         async def probe(source):
             if self.probe_error:
                 raise MediaError('nope')
-            return {'format': {'duration': '250.0'}}
+            return {'format': {'duration': str(self.probe_total)}}
         async def refresh():
             self.refreshed.append(1)
             return MediaSource(f'fresh{len(self.refreshed)}')
-        self.refresh, self.probe_error = refresh, False
+        self.refresh, self.probe_error, self.probe_total = refresh, False, 250.0
         async def sleep(seconds):
             if seconds:
                 self.waits.append(seconds)
@@ -305,6 +305,14 @@ class ShortChunk(unittest.IsolatedAsyncioTestCase):
         await transcribe_source_remote(MediaSource('x'), [self.fake], self.root/'o', self.root/'c', chunk_seconds=100)
         self.assertEqual([c[1] for c in self.calls], [0, 100, 200])
         self.assertEqual(self.waits, [])
+
+    async def test_audio_slightly_shorter_than_container_completes(self):
+        # Production: container 3589 s, audio track ends at 3588 s.
+        self.probe_total = 251.5
+        result = await transcribe_source_remote(MediaSource('x'), [self.fake], self.root/'o', self.root/'c', chunk_seconds=100, refresh=self.refresh)
+        self.assertEqual([c[1] for c in self.calls], [0, 100, 200])
+        self.assertEqual(self.waits, [])
+        self.assertEqual(json.loads(result.read_text(encoding='utf-8'))[-1]['end'], 250)
 
     async def test_probe_failure_keeps_old_behavior(self):
         self.probe_error, self.short = True, {100: 1}
