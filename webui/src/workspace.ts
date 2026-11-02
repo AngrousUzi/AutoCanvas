@@ -154,10 +154,40 @@ export const transcriptFiles = (group: ArtifactLesson) =>
   group.files.filter((f) =>
     /\/(transcript\.json|segments\.jsonl|transcript\.txt)$/.test(f.path),
   );
+const transcriptFolder = (path: string) => path.slice(0, path.lastIndexOf("/"));
+export const transcriptRank = (path: string) =>
+  path.includes("/live/")
+    ? 2
+    : transcriptFolder(path).endsWith("/platform")
+      ? 1
+      : 0;
+export const transcriptLabel = (path: string) =>
+  path.includes("/live/")
+    ? "直播转写"
+    : transcriptFolder(path).endsWith("/platform")
+      ? "平台原始转写"
+      : "回放转写";
+/** JSON Lines rows; lines that are not complete JSON yet are counted, not thrown. */
+export function parseJsonLines(text: string) {
+  let invalid = 0;
+  const rows = text
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        invalid++;
+        return [];
+      }
+    });
+  return { rows, invalid };
+}
 export function fileLabel(file: OutputFile) {
   const names: Record<string, string> = {
     "transcript.json": "分段转写",
     "transcript.txt": "文字稿",
+    "raw.json": "平台原始数据",
     "segments.jsonl": "实时转写",
     "slides.json": "画面时间索引",
     "qr.json": "二维码检测报告",

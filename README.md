@@ -86,7 +86,7 @@ python -m autocanvas process 10001 20001 --duration 30
 
 ## 自动化与直播
 
-服务启动后同步课程、视频、作业；课表默认每周更新，视频与作业每小时更新，调度每分钟检查。新回放默认自动转写、抽取 Slides，二者独立排队、独立重试。单个课程没有录播映射不影响其作业同步或其他课程。
+服务启动后同步课程、视频、作业；课表默认每周更新，视频与作业每小时更新，调度每分钟检查。新回放默认自动转写、抽取 Slides，二者独立排队、独立重试。设置 `course_priority`（课程编号列表，WebUI 中为“处理优先课程”，立即生效）时，各处理队列先按列表顺序取对应课程的任务，其余课程随后按创建时间处理。单个课程没有录播映射不影响其作业同步或其他课程。
 
 直播课次到开始前十分钟时创建一个独立监听协程。协程获取最新地址、启动 ffmpeg、持续接收音频，将音频放入有界队列交给 ASR，保存转写并检测关键词。断流后重新获取地址并连接；未开播持续重试至课程结束。队列满时丢弃最老待识别块并记录音频缺口。ASR 单实例串行执行，直播块优先于待处理回放块，正在推理的块不会被强行中断。
 
@@ -97,6 +97,55 @@ python -m autocanvas process 10001 20001 --duration 30
 自动化暂停只停止新的自动派发，正在执行的任务继续；取消正在执行的任务需使用取消接口。人工请求可在暂停期间执行。
 
 直播目前按官方前端 `liveDay=0` 查询可见课次；真实直播流仍需在有正在直播的课程时验收。不能据此保证尚未被平台返回的未来课次会提前十分钟发现。接口与限制详见 [验证记录](docs/validation.md)。
+
+## 回放转写后端
+
+回放、上传文件与抽样转写默认使用本地 Qwen；以下环境变量切换到远程转写：Gemini Live（`gemini-3.5-transcribe-live`，WebSocket 以数倍实时速度推送录音）、Gemini（`gemini-3.5-transcribe`，Files API + generateContent）和 Groq（Whisper）。直播转写由 `AUTOCANVAS_ASR_BACKEND` 等变量单独配置，二者互不影响。
+
+本机无法直连 Gemini 或 Groq 时（例如在中国大陆），设置 `AUTOCANVAS_ASR_PROXY` 为 HTTP 代理地址。它只作用于发往 Gemini/Groq 的请求（回放与直播转写），不影响 Canvas、jAccount、交大视频和 ffmpeg，这些仍然直连；留空或不设置则全部直连。
+
+```sh
+# local（默认，不可与其他项组合）| 逗号分隔的 gemini-live、gemini、groq，按优先级排列；推荐顺序如下
+AUTOCANVAS_REPLAY_ASR_BACKEND=gemini-live,gemini,groq
+# gemini-live 与 gemini 需要 GEMINI_API_KEY 或 GOOGLE_API_KEY；语言共用 AUTOCANVAS_GEMINI_REPLAY_LANGUAGE
+AUTOCANVAS_GEMINI_REPLAY_LIVE_MODEL=gemini-3.5-transcribe-live
+# 推送速度为实时的倍数，1 到 6；每块的 块长/速度 不得超过 540 秒（Live 会话上限 10 分钟），默认 1500 秒的块至少需要 2.78 倍
+AUTOCANVAS_GEMINI_REPLAY_LIVE_SPEED=4
+AUTOCANVAS_GEMINI_REPLAY_MODEL=gemini-3.5-transcribe
+AUTOCANVAS_GEMINI_REPLAY_LANGUAGE=cmn-Hans-CN
+# groq 需要 GROQ_API_KEY
+AUTOCANVAS_GROQ_MODEL=whisper-large-v3-turbo
+AUTOCANVAS_GROQ_LANGUAGE=zh
+AUTOCANVAS_GROQ_PROMPT=以下是普通话的课堂内容，请使用简体中文和标点符号。
+# 本机无法直连 Gemini/Groq 时填写；留空为直连
+AUTOCANVAS_ASR_PROXY=http://127.0.0.1:3128
+# 每次请求的音频长度，60 到 1680 秒；Gemini 带词时间戳超过约 28 分钟会被截断
+AUTOCANVAS_REPLAY_CHUNK_SECONDS=1500
+```
+
+音频按块切成单声道 16 kHz、48 kbps MP3，25 分钟约 9 MB，低于 Groq 的 25 MB 上限。免费额度（实测数据来自 va2md 项目）：
+
+| 服务 | 请求频率 | 每日 | 其他 |
+| --- | --- | --- | --- |
+| Gemini Live（`gemini-3.5-transcribe-live`，本账号 AI Studio 额度） | 不限 | 不限 | 2 万 token/分钟，音频约 25 token/秒；会话最长 10 分钟 |
+| Gemini | 3 次/分钟，按请求完成时计入窗口 | 25 次 | 1 万输入 token/分钟；429 无 Retry-After，等待时间在 error.message 的 `retry in Ns` |
+| Groq（whisper-large-v3 / -turbo） | 20 次/分钟 | 2,000 次 | 7,200 音频秒/小时，28,800 音频秒/天，单文件 25 MB，最少按 10 秒计费；429 带 Retry-After |
+
+Gemini Live 回放实测（120 秒课堂音频，100 ms 帧）：
+
+- 2 倍、4 倍速推送都得到完整且相同的转写；4 倍速 36.7 秒发完，最后一句在发送结束约 1 秒后返回。
+- 10 倍速 6.5 秒发完，但服务端只转写到约 30 秒处就发送 turnComplete 并以 1011 关闭；服务端处理速度约为 4 到 5 倍实时，`audioStreamEnd` 时仍在缓冲的音频被丢弃。因此默认 4 倍，上限 6 倍。
+- Live API 不支持词时间戳。每条定稿句覆盖自上一句以来结束的语音活动区间（`voiceActivity` 的 `audioOffset`）；没有已结束的区间时，用当前区间起点到收到时已发送的位置；完全没有语音活动信息时，从上一句结束到已发送位置。时间精度因此低于文件模式的词时间戳。
+- 每块一个会话：发完音频后发送 `audioStreamEnd`，等到 turnComplete 或 15 秒无消息再关闭。发送结束前连接异常关闭时整块作废并报错，不保留部分结果；配额类关闭（RESOURCE_EXHAUSTED、quota）按 60 秒限流处理。
+
+节奏与回退：
+
+- 同一后端的下一次请求在上一次结束后才开始计时：Gemini 间隔 65 秒，Groq 3 秒，Gemini Live 不间隔；失败的请求也计入。
+- 429 且等待不超过 120 秒时，原地等待后重试同一后端，每块最多 5 次；等待更长或未知时，该后端暂停（未知按 1 小时），当前块交给列表中的下一个后端。暂停状态在服务进程内跨任务保留。
+- 所有后端都暂停时，任务不会标记失败，而是以最早恢复时间（至少 60 秒）延后；恢复后从已保存的分段继续。
+- 每块由哪个后端完成记录在转写目录的 `events.jsonl`（`type: chunk`、`backend`）。
+
+回放转写任务开始前还会尝试保存视频平台自带的 AI 转写到 `outputs/<课程>/<课次>/platform/`；平台尚未生成或请求失败时跳过，不影响转写。
 
 ## HTTP
 

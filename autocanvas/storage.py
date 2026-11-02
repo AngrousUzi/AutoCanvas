@@ -66,7 +66,7 @@ class Store:
                            (json.dumps(options or {}), now, *key))
             return db.execute('SELECT id FROM executions WHERE kind=? AND course_id=? AND lecture_id=?', key).fetchone()[0]
 
-    def claim(self, kind, *, run_id=None, allow_automatic=True):
+    def claim(self, kind, *, run_id=None, allow_automatic=True, priority=()):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             kinds = (kind,) if isinstance(kind, str) else tuple(kind)
@@ -77,7 +77,11 @@ class Store:
                 params.append(run_id)
             if not allow_automatic:
                 sql += " AND COALESCE(json_extract(options, '$.automatic'),0)=0"
-            row = db.execute(sql+' ORDER BY created LIMIT 1', params).fetchone()
+            order = 'created'
+            if priority:
+                order = 'CASE course_id '+''.join(f'WHEN ? THEN {i} ' for i in range(len(priority)))+f'ELSE {len(priority)} END, created'
+                params += [str(c) for c in priority]
+            row = db.execute(sql+f' ORDER BY {order} LIMIT 1', params).fetchone()
             if not row:
                 return None
             db.execute("UPDATE executions SET status='running', attempts=attempts+1, updated=? WHERE id=?", (time.time(), row['id']))

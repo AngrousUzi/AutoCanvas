@@ -6,6 +6,8 @@ import {
   slideFiles,
   isActive,
   timecode,
+  transcriptLabel,
+  transcriptRank,
 } from "../src/workspace.ts";
 import type { Lecture, Run, OutputFile } from "../src/workspace.ts";
 const lecture: Lecture = { id: "2", course_id: "1", kind: "vod", name: "课堂" };
@@ -120,4 +122,16 @@ test("status and time labels handle missing or invalid data", () => {
   assert.ok(!isActive(run("live", "expired")));
   assert.equal(timecode(3661), "01:01:01");
   assert.equal(timecode(-10), "00:00:00");
+});
+test("transcript folders are labelled and ordered replay, platform, live", () => {
+  const paths = [
+    "outputs/1/2/live/segments.jsonl",
+    "outputs/1/2/platform/transcript.json",
+    "outputs/1/2/vod_asr/transcript.json",
+  ].sort((a, b) => transcriptRank(a) - transcriptRank(b));
+  assert.deepEqual(paths.map(transcriptLabel), [
+    "回放转写",
+    "平台原始转写",
+    "直播转写",
+  ]);
 });

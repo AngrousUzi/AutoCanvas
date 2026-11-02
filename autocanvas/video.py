@@ -60,6 +60,10 @@ class Video:
             page += 1
         return result
 
+    def transcript(self, lecture_id):
+        # Platform AI transcript; data is None until the platform has generated one.
+        return self.get('/v1/course/ai/translate/'+str(lecture_id), useOriginal='true')
+
     def sources(self, lecture_id, kind='vod', *, live_protocol=3):
         if kind == 'vod':
             info = self.get('/v1/course_vod_urls_new', courseId=lecture_id)

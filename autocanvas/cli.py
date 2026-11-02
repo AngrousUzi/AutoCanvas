@@ -192,7 +192,19 @@ async def main_async(args, settings):
             await inference.close()
 
 
+def load_env(path=Path(__file__).resolve().parents[1]/'.env'):
+    # Shell-exported values win over .env.
+    import os
+    if not path.exists():
+        return
+    for line in path.read_text(encoding='utf-8').splitlines():
+        key, sep, value = line.strip().partition('=')
+        if sep and key and not key.startswith('#'):
+            os.environ.setdefault(key.strip(), value.strip().strip('"\''))
+
+
 def main():
+    load_env()
     args = parser().parse_args()
     settings = Settings.load(args.config, root=args.root)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')

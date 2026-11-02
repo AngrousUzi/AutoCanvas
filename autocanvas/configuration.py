@@ -2,16 +2,17 @@
 from .config import Settings
 from .outputs import atomic_json
 
-RESTART = {'root', 'host', 'port'}
+RESTART = {'root', 'host', 'port', 'live_chunk_seconds'}
 IDLE = {'model', 'device', 'chunk_seconds', 'sample_every', 'live_queue_chunks', 'keywords', 'keyword_debounce'}
 LABELS = {
     'root': ('运行数据目录', '服务'), 'host': ('监听地址', '服务'), 'port': ('监听端口', '服务'),
-    'course_ids': ('同步课程白名单（留空表示全部）', '自动化'),
+    'course_ids': ('同步课程白名单（留空表示全部）', '自动化'), 'course_priority': ('处理优先课程（按顺序）', '自动化'),
     'auto_asr': ('自动转写回放', '自动化'), 'auto_slides': ('自动抽取 Slides', '自动化'), 'auto_live': ('自动监听直播', '自动化'),
     'course_interval': ('课表同步间隔 / 秒', '自动化'), 'sync_interval': ('视频同步间隔 / 秒', '自动化'),
     'assignment_interval': ('作业同步间隔 / 秒', '自动化'),
     'schedule_interval': ('调度检查间隔 / 秒', '自动化'), 'live_lead_seconds': ('直播提前启动 / 秒', '直播'),
-    'live_queue_chunks': ('直播音频队列容量 / 块', '直播'), 'model': ('本地模型名称或路径', '转写'),
+    'live_queue_chunks': ('直播音频队列容量 / 块', '直播'), 'live_chunk_seconds': ('直播音频块长度 / 秒', '直播'),
+    'model': ('本地模型名称或路径', '转写'),
     'device': ('推理设备', '转写'), 'chunk_seconds': ('音频块长度 / 秒', '转写'), 'sample_every': ('画面采样间隔 / 秒', 'Slides'),
     'keywords': ('监听关键词', '直播'), 'keyword_debounce': ('关键词防抖间隔 / 秒', '直播'),
 }

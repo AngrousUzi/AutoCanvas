@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from .execution import blocking
 from .flows import lecture_key
-from .types import AuthenticationRequired, VideoUnavailable
+from .types import AuthenticationRequired, RateLimited, VideoUnavailable
 
 log = logging.getLogger(__name__)
 
@@ -159,8 +159,24 @@ class Service:
                 failed.append(course['id'])
                 self.store.put('sync', course['id'], {'course_id': course['id'], 'at': time.time(), 'status': 'failed', 'error': type(error).__name__})
             self.request_assignments(course['id'], automatic=automatic, due_only=automatic)
+        await self._platform_transcripts({c['id'] for c in courses})
         if failed:
             raise RuntimeError('Video synchronization failed for some courses; see sync status')
+
+    async def _platform_transcripts(self, course_ids, days=14):
+        # The platform generates its transcript hours after a replay appears; vod_asr may run before that.
+        from .flows import save_platform_transcript
+        cutoff = time.time()-days*86400
+        for lecture in self.store.list('lectures'):
+            if lecture['kind'] != 'vod' or lecture['course_id'] not in course_ids or not lecture.get('begin'):
+                continue
+            folder = self.settings.root/'outputs'/lecture['course_id']/lecture['id']/'platform'
+            if datetime.fromisoformat(lecture['begin']).timestamp() < cutoff or (folder/'transcript.json').exists():
+                continue
+            try:
+                await blocking(save_platform_transcript, await blocking(self.catalog.transcript, lecture), folder)
+            except Exception as error:
+                log.warning('Platform transcript skipped: %s', type(error).__name__)
 
     async def _execute(self, row):
         run_id = row['id']
@@ -171,7 +187,7 @@ class Service:
             elif row['kind'] == 'assignments':
                 artifact = await blocking(self.assignments.run, row['course_id'])
             elif row['kind'].startswith('local_'):
-                from .flows import transcribe_source, slides_source
+                from .flows import slides_source
                 from .types import MediaSource
                 upload = self.store.get('uploads', row['options']['upload_id'])
                 if not upload:
@@ -179,7 +195,7 @@ class Service:
                 source = MediaSource(str(self.settings.root/'uploads'/upload['file']))
                 folder = self.settings.root/'outputs'/'local'/row['lecture_id']/row['kind']
                 if row['kind'] == 'local_asr':
-                    artifact = await transcribe_source(source, self.replay.transcribe, folder, chunk_seconds=self.settings.chunk_seconds, duration=row['options'].get('duration'))
+                    artifact = await self.replay.transcribe_media(source, folder, self.settings.root/'cache'/'asr'/'local'/row['lecture_id'], duration=row['options'].get('duration'))
                 else:
                     artifact = await slides_source(source, folder, self.settings.root/'cache'/'local'/row['lecture_id'], sample_every=self.settings.sample_every, duration=row['options'].get('duration'))
             else:
@@ -200,7 +216,8 @@ class Service:
                         from .flows import Replay
                         sample = Replay(self.replay.resolve_sources, self.replay.transcribe,
                                         self.settings.root/'samples'/row['options']['output_key'], self.settings.root/'cache'/run_id,
-                                        chunk_seconds=self.settings.chunk_seconds, sample_every=self.settings.sample_every)
+                                        chunk_seconds=self.settings.chunk_seconds, sample_every=self.settings.sample_every,
+                                        transcribers=self.replay.transcribers, remote_chunk_seconds=self.replay.remote_chunk_seconds)
                         artifact = await sample.run(lecture, row['kind'].replace('sample_', 'vod_'), row['options'])
                     else:
                         artifact = await self.replay.run(lecture, row['kind'], row['options'])
@@ -211,10 +228,15 @@ class Service:
             raise
         except AuthenticationRequired:
             self.store.finish(run_id, 'needs_login', error='AuthenticationRequired')
+        except RateLimited as error:
+            # Quota exhaustion postpones the job; it resumes from saved segments instead of failing.
+            delay = max(60, 3600 if error.retry_after is None else error.retry_after)
+            self.store.defer(run_id, delay=delay)
+            log.warning('%s rate limited (%s); deferred %.0fs', row['kind'], error.stage, delay)
         except Exception as error:
             delay = (5, 15, 60)[row['attempts']-1] if row['attempts'] <= 3 else None
             self.store.finish(run_id, 'pending' if delay is not None else 'failed', error=type(error).__name__, delay=delay or 0)
-            log.warning('%s failed: %s', row['kind'], type(error).__name__)
+            log.warning('%s failed: %s', row['kind'], type(error).__name__, exc_info=True)
         finally:
             self.active.pop(run_id, None)
 
@@ -223,7 +245,7 @@ class Service:
             if self.configuration:
                 self.configuration.apply_ready()
             paused = self.store.get('control', 'automation', {}).get('paused', False)
-            row = self.store.claim(kind, allow_automatic=not paused)
+            row = self.store.claim(kind, allow_automatic=not paused, priority=self.settings.course_priority)
             if row is None:
                 await asyncio.sleep(0.5)
                 continue

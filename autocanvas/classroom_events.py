@@ -42,7 +42,7 @@ def classroom_events(root: Path):
                 continue
             events.append({**context, 'type': 'qr', 'id': f'{relative[1]}:{relative[2]}:qr:{row.get("id", name)}',
                            'start': row['start'], 'content': row.get('content', ''),
-                           'decoded': bool(row.get('decoded')), 'image': str(image.relative_to(root))})
+                           'decoded': bool(row.get('decoded')), 'image': image.relative_to(root).as_posix()})
     for path in sorted(base.glob('*/*/live/events.jsonl')):
         if not safe(path):
             continue

@@ -51,6 +51,13 @@ class RemoteError(RuntimeError):
         self.code = code
 
 
+class RateLimited(RemoteError):
+    """Provider quota exhausted; retry_after is seconds, or None if unknown."""
+    def __init__(self, message='', *, retry_after=None, stage=None, code=429):
+        super().__init__(message, stage=stage, code=code)
+        self.retry_after = retry_after
+
+
 class MediaError(RuntimeError):
     pass
 

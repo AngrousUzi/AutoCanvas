@@ -10,7 +10,7 @@ def main():
     parser.add_argument('--config', default='dashboard.yml')
     args = parser.parse_args()
     path = Path(args.config).resolve()
-    settings = yaml.safe_load(path.read_text())
+    settings = yaml.safe_load(path.read_text(encoding='utf-8'))
     if not isinstance(settings, dict):raise ValueError('需要 dashboard.yml 配置')
     settings['dist'] = str((path.parent/settings.get('dist', 'webui/dist')).resolve())
     settings['codex_config'] = str(path.parent/'homework.yml')

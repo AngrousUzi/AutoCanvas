@@ -12,6 +12,7 @@ class Settings:
     host: str = '127.0.0.1'
     port: int = 8080
     course_ids: list[str] = field(default_factory=list)
+    course_priority: list[str] = field(default_factory=list)
     auto_asr: bool = True
     auto_slides: bool = True
     auto_live: bool = True
@@ -24,6 +25,7 @@ class Settings:
     model: str = 'Qwen/Qwen3-ASR-0.6B'
     device: str = 'mps'
     chunk_seconds: float = 3
+    live_chunk_seconds: float = 0.2
     sample_every: float = 5
     keywords: list[str] = field(default_factory=lambda: ['签到', '点名', '名字'])
     keyword_debounce: int = 30
@@ -39,7 +41,7 @@ class Settings:
                 raise ValueError(f'{key}: 整数超出允许范围')
         if self.live_queue_chunks > 10000:
             raise ValueError('live_queue_chunks: 最大为 10000')
-        for key in ('chunk_seconds', 'sample_every'):
+        for key in ('chunk_seconds', 'live_chunk_seconds', 'sample_every'):
             value = getattr(self, key)
             if type(value) not in (int, float) or not math.isfinite(value) or not 0.1 <= value <= 3600:
                 raise ValueError(f'{key}: 必须在 0.1 到 3600 秒之间')
@@ -47,12 +49,13 @@ class Settings:
             value = getattr(self, key)
             if not isinstance(value, str) or not value.strip() or len(value) > 1024 or any(c in value for c in '\r\n\x00'):
                 raise ValueError(f'{key}: 无效文本')
-        for key in ('course_ids', 'keywords'):
+        for key in ('course_ids', 'course_priority', 'keywords'):
             value = getattr(self, key)
             if not isinstance(value, list) or len(value) > 1000 or any(not isinstance(v, str) or not v.strip() for v in value):
                 raise ValueError(f'{key}: 必须为非空字符串列表')
-        if any(not v.isdigit() for v in self.course_ids):
-            raise ValueError('course_ids: 课程编号必须是数字')
+        for key in ('course_ids', 'course_priority'):
+            if any(not v.isdigit() for v in getattr(self, key)):
+                raise ValueError(f'{key}: 课程编号必须是数字')
         if not isinstance(self.root, (str, Path)) or not str(self.root).strip():
             raise ValueError('root: 需要有效路径')
         self.root = Path(self.root).expanduser().resolve()
@@ -66,7 +69,7 @@ class Settings:
         data = {}
         if path:
             path = Path(path)
-            data = tomllib.loads(path.read_text())
+            data = tomllib.loads(path.read_text(encoding='utf-8'))
             if 'root' in data:
                 data['root'] = (path.resolve().parent / data['root']).resolve()
         if root is not None:
@@ -77,7 +80,7 @@ class Settings:
         settings = cls(**data).validate()
         saved_path = settings.root/'settings.json'
         if saved_path.exists():
-            saved = json.loads(saved_path.read_text())
+            saved = json.loads(saved_path.read_text(encoding='utf-8'))
             settings = cls(**{**settings.public(), **saved}).validate()
         settings._settings_path = saved_path
         return settings

@@ -10,20 +10,26 @@ import {
   groupArtifacts,
   slideFiles,
   transcriptFiles,
+  transcriptLabel,
+  transcriptRank,
   lectureTitle,
   timecode,
   fileLabel,
 } from "../workspace";
 import type { ArtifactLesson, OutputFile } from "../workspace";
 import DocumentReader from "../components/DocumentReader.vue";
+import LessonReview from "../components/LessonReview.vue";
+import { buildOccurrences } from "../review";
 const route = useRoute(),
   router = useRouter();
-const { courses, lectures, courseName } = useWorkspace();
+const { courses, lectures, runs, courseName } = useWorkspace();
 const files = query("files", "/api/files", 15000),
   assignments = query("assignments", "/api/assignments");
 const allFiles = computed<OutputFile[]>(() => files.data.value || []);
 const validSection = (value: unknown) =>
-  ["slides", "transcript", "data", "assignments"].includes(String(value))
+  ["slides", "transcript", "data", "review", "assignments"].includes(
+    String(value),
+  )
     ? String(value)
     : "slides";
 const search = ref(""),
@@ -130,7 +136,7 @@ const slides = computed(() =>
 const transcriptOptions = computed(() => {
   if (!selected.value) return [];
   const rows = transcriptFiles(selected.value);
-  // JSONL includes the newest committed live fragments; completed replay uses JSON.
+  // JSONL includes the newest committed live fragments; replay and platform use JSON.
   const folders = [
     ...new Set(rows.map((f) => f.path.slice(0, f.path.lastIndexOf("/")))),
   ];
@@ -150,10 +156,7 @@ const transcriptOptions = computed(() => {
         rows.find((f) => f.path.startsWith(folder + "/")),
     )
     .filter((f): f is OutputFile => !!f)
-    .sort(
-      (a, b) =>
-        Number(a.path.includes("/live/")) - Number(b.path.includes("/live/")),
-    );
+    .sort((a, b) => transcriptRank(a.path) - transcriptRank(b.path));
 });
 const dataOptions = computed(
   () =>
@@ -191,6 +194,21 @@ const slideIndex = useQuery({
     () => !!manifest.value && manifest.value.size < 2 * 1024 * 1024,
   ),
 });
+const occurrences = computed(() =>
+  buildOccurrences(slideIndex.data.value, slides.value),
+);
+const runningKinds = computed(() =>
+  selected.value
+    ? runs.value
+        .filter(
+          (r) =>
+            r.status === "running" &&
+            r.course_id === selected.value!.courseId &&
+            r.lecture_id === selected.value!.lectureId,
+        )
+        .map((r) => r.kind)
+    : [],
+);
 function slideTime(file: OutputFile) {
   const row = Array.isArray(slideIndex.data.value)
     ? slideIndex.data.value.find((s: any) => s.image === file.name)
@@ -391,6 +409,7 @@ const assignmentDocument = computed(() =>
               ['slides', 'Slides 图片墙', slides.length],
               ['transcript', '课堂转写', transcriptOptions.length],
               ['data', '课堂数据', dataOptions.length],
+              ['review', '实时回顾', occurrences.length],
             ]"
             :key="key"
             role="tab"
@@ -439,6 +458,23 @@ const assignmentDocument = computed(() =>
             >
           </div></template
         >
+        <template v-else-if="section === 'review'"
+          ><LessonReview
+            v-if="selected"
+            :key="selected.key"
+            :lesson-key="selected.key"
+            :files="selected.files"
+            :slides="slides"
+            :occurrences="occurrences"
+            :running="runningKinds"
+            @open="(i: number) => (viewer = i)"
+          />
+          <div v-else class="empty-state">
+            <div class="empty-symbol">▤</div>
+            <h3>这门课还没有课堂产物</h3>
+            <p>画面抽取或转写完成后，会在这里按时间对照显示。</p>
+          </div></template
+        >
         <template v-else-if="section === 'transcript' || section === 'data'"
           ><div v-if="options.length > 1" class="document-select">
             <el-select
@@ -451,9 +487,7 @@ const assignmentDocument = computed(() =>
                 :value="file.path"
                 :label="
                   section === 'transcript'
-                    ? file.path.includes('/live/')
-                      ? '直播转写'
-                      : '回放转写'
+                    ? transcriptLabel(file.path)
                     : fileLabel(file)
                 "
             /></el-select>

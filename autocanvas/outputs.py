@@ -8,7 +8,7 @@ from dataclasses import asdict
 def atomic_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix+'.tmp')
-    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str))
+    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
     temp.replace(path)
 
 
@@ -20,34 +20,38 @@ class Transcript:
         self.end = 0.0
         if self.path.exists():
             valid = []
-            for line in self.path.read_text().splitlines():
+            for line in self.path.read_text(encoding='utf-8').splitlines():
                 try:
                     item = json.loads(line)
                     self.end = max(self.end, float(item['end']))
                     valid.append(json.dumps(item, ensure_ascii=False))
                 except (ValueError, KeyError):
                     break
-            self.path.write_text(''.join(line+'\n' for line in valid))
+            self.path.write_text(''.join(line+'\n' for line in valid), encoding='utf-8')
 
     def append(self, segment):
         if segment.end <= self.end:
             return
-        with self.path.open('a') as handle:
+        with self.path.open('a', encoding='utf-8') as handle:
             handle.write(json.dumps(asdict(segment), ensure_ascii=False)+'\n')
             handle.flush()
             os.fsync(handle.fileno())
         self.end = segment.end
 
     def finish(self):
-        rows = [json.loads(s) for s in self.path.read_text().splitlines()] if self.path.exists() else []
+        rows = [json.loads(s) for s in self.path.read_text(encoding='utf-8').splitlines()] if self.path.exists() else []
         atomic_json(self.folder/'transcript.json', rows)
         tmp = self.folder/'transcript.txt.tmp'
-        tmp.write_text(''.join(f"[{int(r['start'])//3600:02}:{int(r['start'])//60%60:02}:{int(r['start'])%60:02}] {r['text']}\n" for r in rows if r['text']))
+        tmp.write_text(transcript_text(rows), encoding='utf-8')
         tmp.replace(self.folder/'transcript.txt')
         return self.folder/'transcript.json'
 
 
+def transcript_text(rows):
+    return ''.join(f"[{int(r['start'])//3600:02}:{int(r['start'])//60%60:02}:{int(r['start'])%60:02}] {r['text']}\n" for r in rows if r['text'])
+
+
 def append_event(path, event):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a') as handle:
+    with path.open('a', encoding='utf-8') as handle:
         handle.write(json.dumps(event, ensure_ascii=False)+'\n')

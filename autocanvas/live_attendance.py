@@ -88,7 +88,7 @@ class LiveAttendance:
                     from .attendance import parse_code
                     if any(parse_code(r['content'], lecture['course_id']) for r in rows):
                         if not target.exists():target.write_bytes(data)
-                        image = str(target.relative_to(self.root))
+                        image = target.relative_to(self.root).as_posix()
                 self.worker.offer(key, rows, lecture['course_id'], lecture['id'], received, image)
 
         tasks = [asyncio.create_task(capture()), asyncio.create_task(decode())]

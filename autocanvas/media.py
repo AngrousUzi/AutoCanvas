@@ -82,6 +82,20 @@ async def audio(source, *, sample_rate=16000, chunk_seconds=3, offset=0, duratio
         await stop(proc)
 
 
+async def audio_file(source, destination, *, offset=0, duration, sample_rate=16000):
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    args = ['ffmpeg', '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', *inputs(source)]
+    if offset:
+        args += ['-ss', str(offset)]
+    args += ['-i', source.location, '-t', str(duration), '-vn', '-ac', '1', '-ar', str(sample_rate), '-c:a', 'libmp3lame', '-b:a', '48k', str(destination)]
+    await command(args, timeout=max(600, duration*2))
+    if not destination.exists() or not destination.stat().st_size:
+        return 0.0
+    info = await probe(MediaSource(str(destination)))
+    return float(info.get('format', {}).get('duration') or 0)
+
+
 async def sample_frames(source, destination: Path, *, every=5, duration=None):
     if every <= 0:
         raise ValueError('Frame interval must be positive')

@@ -29,13 +29,13 @@ def export(session, assignment, folder: Path):
     folder.mkdir(parents=True, exist_ok=True)
     text = html_to_text(assignment.get('description'))
     temporary = folder/'description.txt.tmp'
-    temporary.write_text(text)
+    temporary.write_text(text, encoding='utf-8')
     temporary.replace(folder/'description.txt')
     existing = {}
     manifest_path = folder/'assignment.json'
     if manifest_path.exists():
         import json
-        old = json.loads(manifest_path.read_text())
+        old = json.loads(manifest_path.read_text(encoding='utf-8'))
         if old.get('updated_at') == assignment.get('updated_at'):
             existing = {a['id']: a for a in old.get('attachments', []) if a.get('status') == 'succeeded'}
     results = []

@@ -32,16 +32,17 @@ class Boundaries(unittest.TestCase):
 
     def test_no_reverse_dependencies(self):
         allowed = {'asr': {'types'}, 'media': {'types'}, 'slides': set(), 'qr': set(), 'classroom_events': set(), 'auth': {'types', '_jaccount', 'automatic_login'},
-                   'video': {'types'}, 'canvas': {'types'}, '_jaccount': set()}
+                   'video': {'types'}, 'canvas': {'types'}, '_jaccount': set(), 'gemini_transcribe': {'types'}, 'groq_transcribe': {'types'},
+                   'gemini_live_transcribe': {'types', 'media'}}
         for module, imports in allowed.items():
-            tree = ast.parse(Path('autocanvas', module+'.py').read_text())
+            tree = ast.parse(Path('autocanvas', module+'.py').read_text(encoding='utf-8'))
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.level:
                     names = {node.module.split('.')[0]} if node.module else {a.name for a in node.names}
                     self.assertLessEqual(names, imports, module)
         for path in Path('autocanvas').glob('*.py'):
-            self.assertNotIn('AutoCanvasGateway', path.read_text())
-            self.assertNotIn('JobRegistry', path.read_text())
+            self.assertNotIn('AutoCanvasGateway', path.read_text(encoding='utf-8'))
+            self.assertNotIn('JobRegistry', path.read_text(encoding='utf-8'))
 
     def test_time_normalization(self):
         self.assertTrue(timestamp('2026-09-17 12:00:00').endswith('+08:00'))
@@ -81,6 +82,20 @@ class Persistence(unittest.TestCase):
         manual = self.store.enqueue('vod_asr','1','3')
         self.assertEqual(self.store.claim('vod_asr', allow_automatic=False)['id'], manual)
         self.assertIsNone(self.store.claim('vod_asr', allow_automatic=False))
+
+    def test_claim_priority_then_created(self):
+        ids = {}
+        for i, (course, lecture) in enumerate([('5', 'a'), ('96285', 'b'), ('7', 'c'), ('97156', 'd'), ('96367', 'e'), ('97156', 'f')]):
+            ids[lecture] = self.store.enqueue('vod_asr', course, lecture)
+            with self.store.connect() as db:
+                db.execute('UPDATE executions SET created=? WHERE id=?', (100+i, ids[lecture]))
+        order = [self.store.claim(('vod_asr', 'local_asr'), priority=['96367', '97156', '96285'])['lecture_id'] for _ in range(6)]
+        self.assertEqual(order, ['e', 'd', 'f', 'b', 'a', 'c'])
+        self.store.enqueue('vod_asr', '96367', 'g')
+        self.store.enqueue('vod_asr', '5', 'h')
+        with self.store.connect() as db:
+            db.execute("UPDATE executions SET created=0 WHERE lecture_id='h'")
+        self.assertEqual(self.store.claim('vod_asr')['lecture_id'], 'h')
 
     def test_transcript_resume_and_torn_tail(self):
         folder = Path(self.temp.name)/'out'
@@ -324,7 +339,7 @@ class AttachmentTests(unittest.TestCase):
             self.assertEqual([a['status'] for a in second['attachments']],['succeeded','succeeded'])
             self.assertEqual(session.calls.count('https://example.test/1'),1)
             self.assertFalse((Path(tmp)/'a.pdf').exists())
-            self.assertEqual((folder/'description.txt').read_text(),'正文')
+            self.assertEqual((folder/'description.txt').read_text(encoding='utf-8'),'正文')
 
     def test_canvas_html_attachments_are_discovered(self):
         from autocanvas.assignments import attachments

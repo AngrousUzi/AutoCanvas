@@ -157,7 +157,7 @@ def install(app, service):
                 for path in (root/base).rglob('*'):
                     if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to((root/base).resolve()):
                         stat = path.stat()
-                        rows.append({'path': str(path.relative_to(root)), 'name': path.name, 'size': stat.st_size, 'modified': stat.st_mtime})
+                        rows.append({'path': path.relative_to(root).as_posix(), 'name': path.name, 'size': stat.st_size, 'modified': stat.st_mtime})
             return sorted(rows, key=lambda row: row['modified'], reverse=True)
         return web.json_response(await blocking(listing))
 

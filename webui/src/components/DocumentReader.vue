@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { ElMessage } from "element-plus";
 import { fileUrl } from "../api";
-import { timecode, fileLabel } from "../workspace";
+import { timecode, fileLabel, parseJsonLines } from "../workspace";
 import type { OutputFile } from "../workspace";
 import StructuredData from "./StructuredData.vue";
 import SearchText from "./SearchText.vue";
@@ -35,18 +35,7 @@ const parsed = computed(() => {
   try {
     if (props.file.path.endsWith(".json"))
       return { value: JSON.parse(text), warning: "" };
-    let invalid = 0;
-    const rows = text
-      .split("\n")
-      .filter(Boolean)
-      .flatMap((line) => {
-        try {
-          return [JSON.parse(line)];
-        } catch {
-          invalid++;
-          return [];
-        }
-      });
+    const { rows, invalid } = parseJsonLines(text);
     return {
       value: rows,
       warning: invalid ? `${invalid} 条未完整写入的记录暂未展示。` : "",

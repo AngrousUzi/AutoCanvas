@@ -69,6 +69,23 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row['error'], 'RemoteError')
         self.assertGreater(row['due'], time.time())
 
+    async def test_rate_limit_defers_instead_of_failing(self):
+        from autocanvas.types import RateLimited
+        for wait, delay in ((600, 600), (5, 60), (None, 3600)):
+            async def replay(*args, wait=wait):
+                raise RateLimited('quota', stage='transcribe', retry_after=wait)
+            self.service.replay = SimpleNamespace(run=replay)
+            run = self.service.enqueue_processing('1', '2', 'vod_asr', force=True)
+            row = self.store.claim('vod_asr')
+            self.assertEqual(row['attempts'], 1)
+            with self.assertLogs('autocanvas.service', 'WARNING') as logs:
+                await self.service._execute(row)
+            row = self.store.execution(run)
+            self.assertEqual((row['status'], row['attempts']), ('pending', 0))
+            self.assertAlmostEqual(row['due'], time.time()+delay, delta=5)
+            self.assertIn('rate limited', logs.output[0])
+            self.store.finish(run, 'succeeded')
+
     async def test_auth_recovery_preserves_pause_cancel_and_course_scope(self):
         blocked = self.store.enqueue('vod_asr', '1', '2', options={'automatic': True})
         self.store.finish(blocked, 'needs_login')
