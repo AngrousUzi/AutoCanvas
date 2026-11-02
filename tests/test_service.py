@@ -86,6 +86,20 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('rate limited', logs.output[0])
             self.store.finish(run, 'succeeded')
 
+    async def test_media_not_ready_defers_instead_of_failing(self):
+        from autocanvas.types import MediaNotReady
+        async def replay(*args):
+            raise MediaNotReady('Replay media not published yet')
+        self.service.replay = SimpleNamespace(run=replay)
+        run = self.service.enqueue_processing('1', '2', 'vod_asr', force=True)
+        row = self.store.claim('vod_asr')
+        with self.assertLogs('autocanvas.service', 'INFO') as logs:
+            await self.service._execute(row)
+        row = self.store.execution(run)
+        self.assertEqual((row['status'], row['attempts']), ('pending', 0))
+        self.assertAlmostEqual(row['due'], time.time()+1800, delta=5)
+        self.assertIn('waiting for replay media', logs.output[0])
+
     async def test_auth_recovery_preserves_pause_cancel_and_course_scope(self):
         blocked = self.store.enqueue('vod_asr', '1', '2', options={'automatic': True})
         self.store.finish(blocked, 'needs_login')

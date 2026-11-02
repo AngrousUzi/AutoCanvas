@@ -130,6 +130,8 @@ class VideoTests(unittest.TestCase):
         sources = video.sources('2','live')
         self.assertIn('account_token=a%26b', sources[0].location)
         self.assertNotIn('account_token', repr(sources[0]))
+        video.get = lambda path, **params: {'courseVodViewList': None}
+        self.assertEqual(video.sources('2'), [])
 
 
 class AsyncTests(unittest.IsolatedAsyncioTestCase):

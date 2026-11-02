@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from .execution import blocking
 from .flows import lecture_key
-from .types import AuthenticationRequired, RateLimited, VideoUnavailable
+from .types import AuthenticationRequired, MediaNotReady, RateLimited, VideoUnavailable
 
 log = logging.getLogger(__name__)
 
@@ -233,6 +233,10 @@ class Service:
             delay = max(60, 3600 if error.retry_after is None else error.retry_after)
             self.store.defer(run_id, delay=delay)
             log.warning('%s rate limited (%s); deferred %.0fs', row['kind'], error.stage, delay)
+        except MediaNotReady:
+            # Listed before the platform publishes the video; check again later without consuming an attempt.
+            self.store.defer(run_id, delay=1800)
+            log.info('%s waiting for replay media; deferred %ds', row['kind'], 1800)
         except Exception as error:
             delay = (5, 15, 60)[row['attempts']-1] if row['attempts'] <= 3 else None
             self.store.finish(run_id, 'pending' if delay is not None else 'failed', error=type(error).__name__, delay=delay or 0)

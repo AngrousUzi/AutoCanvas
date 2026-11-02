@@ -9,7 +9,7 @@ from pathlib import Path
 from . import media
 from .execution import blocking
 from .outputs import Transcript, append_event, atomic_json, transcript_text
-from .types import AuthenticationRequired, MediaError, RateLimited
+from .types import AuthenticationRequired, MediaError, MediaNotReady, RateLimited
 
 log = logging.getLogger(__name__)
 
@@ -248,6 +248,8 @@ class Replay:
             except Exception as error:
                 log.warning('Platform transcript skipped: %s', type(error).__name__)
         sources = await self.resolve_sources(lecture)
+        if not sources:
+            raise MediaNotReady('Replay media not published yet')
         purpose = 'audio' if kind == 'vod_asr' else 'screen'
         source = await media.select(sources, purpose, options.get('view'))
         folder = self.root/lecture['course_id']/lecture['id']/kind

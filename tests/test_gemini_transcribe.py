@@ -205,6 +205,14 @@ class Flow(unittest.IsolatedAsyncioTestCase):
                 await transcribe_source_remote(MediaSource('x'), [fake], root/'b', root/'c2', chunk_seconds=100)
                 self.assertEqual(extracted, [(0, 100), (100, 100), (200, 100)])
 
+    async def test_replay_without_published_media_is_not_ready(self):
+        from autocanvas.types import MediaNotReady
+        async def resolve(lecture): return []
+        with tempfile.TemporaryDirectory() as tmp:
+            replay = Replay(resolve, None, Path(tmp)/'outputs', Path(tmp)/'cache')
+            with self.assertRaises(MediaNotReady):
+                await replay.run({'id': '2', 'course_id': '1', 'kind': 'vod'}, 'vod_slides', {})
+
     async def test_replay_dispatch_and_platform_isolated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

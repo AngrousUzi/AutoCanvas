@@ -62,6 +62,10 @@ class MediaError(RuntimeError):
     pass
 
 
+class MediaNotReady(MediaError):
+    """Replay is listed but its media is not published yet."""
+
+
 class VideoUnavailable(RemoteError):
     """Course has no teaching-class mapping on the new platform."""
     pass

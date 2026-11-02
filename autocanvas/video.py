@@ -67,7 +67,7 @@ class Video:
     def sources(self, lecture_id, kind='vod', *, live_protocol=3):
         if kind == 'vod':
             info = self.get('/v1/course_vod_urls_new', courseId=lecture_id)
-            return [MediaSource(v['url'], view=str(v.get('viewNum', 'unknown'))) for v in (info or {}).get('courseVodViewList', []) if v.get('url')]
+            return [MediaSource(v['url'], view=str(v.get('viewNum', 'unknown'))) for v in (info or {}).get('courseVodViewList') or [] if v.get('url')]
         # Official player's protocol enum: WEBRTC=1, FLV=2, HLS=3.
         if live_protocol not in (2, 3):
             raise ValueError('Unsupported live protocol')
