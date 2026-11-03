@@ -106,7 +106,9 @@ python -m autocanvas process 10001 20001 --duration 30
 
 ```sh
 # local（默认，不可与其他项组合）| 逗号分隔的 gemini-live、gemini、groq，按优先级排列；推荐顺序如下
-AUTOCANVAS_REPLAY_ASR_BACKEND=gemini-live,gemini,groq
+# 实测：Groq turbo 覆盖整段录音；Gemini Live 在嘈杂课堂录音上会整句跳过或编造，推送速度不影响结果；
+# gemini 文件模型常在约 9 分钟处自行停止。Groq 额度用尽时由 Gemini Live 接替。
+AUTOCANVAS_REPLAY_ASR_BACKEND=groq,gemini-live
 # gemini-live 与 gemini 需要 GEMINI_API_KEY 或 GOOGLE_API_KEY；语言共用 AUTOCANVAS_GEMINI_REPLAY_LANGUAGE
 AUTOCANVAS_GEMINI_REPLAY_LIVE_MODEL=gemini-3.5-transcribe-live
 # 推送速度为实时的倍数，1 到 6；每块的 块长/速度 不得超过 540 秒（Live 会话上限 10 分钟），默认 1500 秒的块至少需要 2.78 倍
