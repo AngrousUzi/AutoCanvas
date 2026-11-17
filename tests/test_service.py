@@ -234,3 +234,43 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             response=await client.post('/api/assignments/sync',json={'course_id':'missing'})
             self.assertEqual(response.status,404)
         finally:await client.close()
+
+    async def test_sync_prunes_replaced_same_day_live_lectures_only(self):
+        from autocanvas.flows import CatalogSync
+        from autocanvas.types import SHANGHAI
+        today = datetime.now(SHANGHAI).replace(hour=8, minute=0, second=0, microsecond=0)
+        def live(id, begin):
+            return {'id':id,'course_id':'1','kind':'live','begin':begin.isoformat(),'end':(begin+timedelta(hours=1)).isoformat()}
+        self.store.put('lectures','1:live:stale',live('stale',today))
+        self.store.put('lectures','1:live:past',live('past',today-timedelta(days=1)))
+        self.store.put('lectures','9:live:other',{**live('other',today),'course_id':'9'})
+        answers = {'vod':[], 'live':[live('new',today+timedelta(hours=2))]}
+        class Client:
+            def context(self): return 'tc'
+            def lectures(self, course_id, teaching_class, kind): return answers[kind]
+            def close(self): pass
+        catalog = CatalogSync(None, lambda course: Client(), self.store)
+        answers['live'] = []
+        catalog.videos('1')
+        self.assertIsNotNone(self.store.get('lectures','1:live:stale'))  # an empty answer may be a glitch
+        answers['live'] = [live('new',today+timedelta(hours=2))]
+        catalog.videos('1')
+        keys = {f"{l['course_id']}:{l['kind']}:{l['id']}" for l in self.store.list('lectures')}
+        self.assertEqual(keys, {'1:vod:2','1:live:past','1:live:new','9:live:other'})
+
+    async def test_sync_cancels_live_execution_whose_lecture_vanished(self):
+        now = datetime.now(timezone.utc)
+        self.store.put('lectures','1:live:5',{'id':'5','course_id':'1','kind':'live','begin':now.isoformat(),'end':(now+timedelta(hours=1)).isoformat()})
+        async def monitor(lecture, folder, view=None):
+            await asyncio.sleep(60)
+        self.service.monitor = SimpleNamespace(run=monitor)
+        run = self.service.enqueue_processing('1','5','live')
+        await self.service.start(automation=False)
+        await self.wait_status(run,'running')
+        task = self.service.active[run]
+        self.service.catalog = SimpleNamespace(courses=lambda: None, videos=lambda course: self.store.delete('lectures','1:live:5'))
+        await self.service._sync('1')
+        await self.wait_status(run,'cancelled')
+        await asyncio.sleep(.05)
+        self.assertTrue(task.cancelled())
+        self.assertEqual(self.store.execution(run)['status'],'cancelled')

@@ -150,6 +150,7 @@ class Service:
         for course in courses:
             try:
                 await blocking(self.catalog.videos, course['id'])
+                self._cancel_vanished_live(course['id'])
                 self.store.put('sync', course['id'], {'course_id': course['id'], 'at': time.time(), 'status': 'succeeded'})
             except AuthenticationRequired:
                 raise
@@ -162,6 +163,13 @@ class Service:
         await self._platform_transcripts({c['id'] for c in courses})
         if failed:
             raise RuntimeError('Video synchronization failed for some courses; see sync status')
+
+    def _cancel_vanished_live(self, course_id):
+        # A live row whose lecture the platform replaced must not keep a monitor or Gemini session open.
+        for row in self.store.executions():
+            if (row['kind'] == 'live' and row['course_id'] == str(course_id) and row['status'] in ('pending', 'running', 'needs_login')
+                    and self.store.get('lectures', lecture_key(course_id, 'live', row['lecture_id'])) is None):
+                self.cancel(row['id'])
 
     async def _platform_transcripts(self, course_ids, days=14):
         # The platform generates its transcript hours after a replay appears; vod_asr may run before that.

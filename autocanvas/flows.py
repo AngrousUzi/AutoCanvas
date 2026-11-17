@@ -5,11 +5,12 @@ import json
 import logging
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from . import media
 from .execution import blocking
 from .outputs import Transcript, append_event, atomic_json, transcript_text
-from .types import AuthenticationRequired, MediaError, MediaNotReady, RateLimited
+from .types import SHANGHAI, AuthenticationRequired, MediaError, MediaNotReady, RateLimited
 
 log = logging.getLogger(__name__)
 
@@ -44,10 +45,25 @@ class CatalogSync:
                 rows = client.lectures(course_id, teaching_class, kind)
                 for row in rows:
                     self.store.put('lectures', lecture_key(course_id, kind, row['id']), row)
+                if kind == 'live' and rows:
+                    self._prune_live(course_id, rows)
                 result.extend(rows)
             return result
         finally:
             client.close()
+
+    def _prune_live(self, course_id, rows):
+        # The platform re-issues live IDs; drop replaced ones on the days this answer covers (plus today).
+        # Past days are absent from the live list but still referenced, so they stay. An empty answer
+        # is not trusted: a glitch would otherwise cancel today's real lecture for good.
+        def day(row):
+            return datetime.fromisoformat(row['begin']).astimezone(SHANGHAI).date() if row.get('begin') else None
+        days = {day(r) for r in rows} | {datetime.now(SHANGHAI).date()}
+        current = {r['id'] for r in rows}
+        for old in self.store.list('lectures'):
+            if (old.get('kind') == 'live' and old.get('course_id') == str(course_id) and old['id'] not in current
+                    and old.get('begin') and day(old) in days):
+                self.store.delete('lectures', lecture_key(old['course_id'], 'live', old['id']))
 
     def sources(self, lecture, *, live_protocol=3):
         # Each operation gets fresh course-scoped credentials. Nothing is cached in the DB.

@@ -46,6 +46,10 @@ class Store:
             row = db.execute('SELECT body FROM entities WHERE collection=? AND key=?', (collection, str(key))).fetchone()
         return json.loads(row[0]) if row else default
 
+    def delete(self, collection, key):
+        with self.connect() as db:
+            return bool(db.execute('DELETE FROM entities WHERE collection=? AND key=?', (collection, str(key))).rowcount)
+
     def list(self, collection):
         with self.connect() as db:
             return [json.loads(row[0]) for row in db.execute('SELECT body FROM entities WHERE collection=? ORDER BY key', (collection,))]
